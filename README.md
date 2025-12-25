@@ -53,7 +53,7 @@ PaperBee_jaはすべての設定をYAMLファイルで管理します。 以下�
 
 config.yml の例（日本語要約機能付き）
 
-⚠️queryの書き方やFiltering promptの形式はもとの手法を参照してください。
+⚠️queryの書き方やFiltering promptの形式はフォーク元を参照してください。
 ```YAML
 GOOGLE_SPREADSHEET_ID: "your-google-spreadsheet-id"
 GOOGLE_CREDENTIALS_JSON: "/path/to/your/google-credentials.json"
