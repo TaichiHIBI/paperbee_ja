@@ -1,4 +1,4 @@
-🐝 PaperBee (日本語要約・翻訳対応版)
+# 🐝 PaperBee (日本語要約・翻訳対応版)
 <img src="images/paperbee_logo.png" width="200" height="auto" alt="logo"/>
 
 ⚠️このツールはtheislab/paperbeeを元に、論文要旨の日本語訳・要約機能を付け加えたものです。
