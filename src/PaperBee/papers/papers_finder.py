@@ -79,6 +79,12 @@ class PapersFinder:
         mattermost_channel: str = "",
         ncbi_api_key: str = "",
         databases: Optional[List[str]] = None,
+        # ↓ 引数を追加
+        translation_enabled: bool = False,
+        translation_provider: str = "ollama",
+        translation_model: str = "gpt-oss:20b",
+        translation_api_key: str = "",
+        translation_prompt: str = "",
     ) -> None:
         self.root_dir: str = root_dir
         # dates
@@ -131,6 +137,12 @@ class PapersFinder:
         self.logger = Logger("PapersFinder")
         # NCBI API
         self.ncbi_api_key: str = ncbi_api_key
+        # TRANSLATION API
+        self.translation_enabled = translation_enabled
+        self.translation_provider = translation_provider
+        self.translation_model = translation_model
+        self.translation_api_key = translation_api_key
+        self.translation_prompt = translation_prompt
 
     def find_and_process_papers(self) -> pd.DataFrame:
         """
@@ -201,7 +213,15 @@ class PapersFinder:
                     None,
                 )
         articles = [article for article in articles if article.get("url") is not None]
-        processor = ArticlesProcessor(articles, self.today_str)
+        processor = ArticlesProcessor(
+            articles, 
+            self.today_str, 
+            translation_enabled=self.translation_enabled,
+            translation_provider=self.translation_provider,
+            translation_model=self.translation_model,
+            translation_api_key=self.translation_api_key,
+            translation_prompt=self.translation_prompt
+        )
         processed_articles = processor.articles
         self.logger.info(f"Found {len(processed_articles)} articles.")
 

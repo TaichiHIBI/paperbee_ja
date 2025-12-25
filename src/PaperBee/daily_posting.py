@@ -48,7 +48,7 @@ async def daily_papers_search(
     if slack_args == {}:
         slack_args = {"bot_token": "", "channel_id": "", "is_posting_on": False}
     if mattermost_args == {}:
-        mattermost_args = {"bot_token": "", "channel_id": "", "is_posting_on": False}
+        mattermost_args = {"url": "", "token": "", "team": "", "channel": "", "is_posting_on": False}
 
     llm_filtering = config.get("LLM_FILTERING", False)
     if llm_filtering:
@@ -59,6 +59,15 @@ async def daily_papers_search(
         LANGUAGE_MODEL = ""
         OPENAI_API_KEY = ""
 
+    translation_enabled = config.get("TRANSLATION_ENABLED", False)
+    translation_provider = str(config.get("TRANSLATION_PROVIDER", "ollama")).lower()
+    translation_model = str(config.get("TRANSLATION_MODEL", "gemma2"))
+    translation_api_key = str(config.get("TRANSLATION_API_KEY", ""))
+
+    # ↓ 追加: プロンプトの取得 (デフォルトは全文翻訳)
+    default_prompt = "Translate the following scientific abstract into natural Japanese. Output ONLY the Japanese translation:\n\n{text}"
+    translation_prompt = str(config.get("TRANSLATION_PROMPT", default_prompt))
+    
     finder = PapersFinder(
         root_dir=root_dir,
         spreadsheet_id=config.get("GOOGLE_SPREADSHEET_ID", ""),
@@ -86,6 +95,11 @@ async def daily_papers_search(
         mattermost_team=mattermost_args["team"],
         mattermost_channel=mattermost_args["channel"],
         databases=databases,
+        translation_enabled=translation_enabled,
+        translation_provider=translation_provider,
+        translation_model=translation_model,
+        translation_api_key=translation_api_key,
+        translation_prompt=translation_prompt,
     )
     papers, response_slack, response_telegram, response_zulip, response_mattermost = await finder.run_daily(
         post_to_slack=slack_args["is_posting_on"],

@@ -2,9 +2,65 @@ from datetime import date, datetime
 from time import sleep
 from typing import List, Optional, Union
 
+import google.generativeai as genai
+import ollama
+import os
+
 import defusedxml.ElementTree as ET  # Using defusedxml for security
 import pandas as pd
 import requests
+
+def translate_abstract(text: str, provider: str, model_name: str, api_key: str = "", prompt_template: str = "") -> str:
+    if not text or not isinstance(text, str):
+        return ""
+    
+    # プロンプトの組み立て
+    if "{text}" in prompt_template:
+        prompt = prompt_template.format(text=text)
+    else:
+        prompt = f"{prompt_template}\n\nAbstract:\n{text}"
+
+    try:
+        if provider == "ollama":
+            import ollama
+            response = ollama.chat(model=model_name, messages=[
+                {'role': 'user', 'content': prompt},
+            ])
+            return response['message']['content']
+
+        elif provider == "gemini":
+            import google.generativeai as genai
+            if not api_key:
+                return text + " (Error: API Key missing)"
+            genai.configure(api_key=api_key)
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(prompt)
+            from time import sleep
+            sleep(2)
+            return response.text
+            
+        elif provider == "openai":
+            from openai import OpenAI
+            
+            # クライアントの初期化
+            client = OpenAI(api_key=api_key)
+            
+            response = client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant for summarizing scientific papers."},
+                    {"role": "user", "content": prompt}
+                ]
+            )
+            return response.choices[0].message.content
+        # -----------------
+
+        else:
+            return text
+
+    except Exception as e:
+        print(f"Translation failed ({provider}): {e}")
+        return text
 
 
 class ArticlesProcessor:
@@ -20,7 +76,17 @@ class ArticlesProcessor:
         process_articles(): Process and reshape the input dataframe for the google sheet update.
     """
 
-    def __init__(self, articles: List[dict], today_str: str) -> None:
+    def __init__(
+        self, 
+        articles: List[dict], 
+        today_str: str, 
+        # ↓ 引数を追加
+        translation_enabled: bool = False,
+        translation_provider: str = "ollama",
+        translation_model: str = "gpt-oss:20b",
+        translation_api_key: str = "",
+        translation_prompt: str = ""
+    ) -> None:
         """
         Initializes the ArticlesProcessor with articles data and the current date.
 
@@ -28,6 +94,13 @@ class ArticlesProcessor:
             articles (List[dict]): A list of dictionaries where each dictionary contains article data.
             today_str (str): The current date formatted as a string.
         """
+        # 設定をインスタンス変数に保存
+        self.translation_enabled = translation_enabled
+        self.translation_provider = translation_provider
+        self.translation_model = translation_model
+        self.translation_api_key = translation_api_key
+        self.translation_prompt = translation_prompt
+
         self.articles = pd.DataFrame.from_dict(articles)
         self.today_str = today_str
         self.process_articles()
@@ -42,7 +115,7 @@ class ArticlesProcessor:
 
     def filter_columns(self) -> None:
         """Filters the DataFrame to include specific columns."""
-        columns = ["databases", "publication_date", "title", "keywords", "url"]
+        columns = ["databases", "publication_date", "title", "keywords", "url", "abstract"]
 
         if self.articles.empty:
             self.articles = pd.DataFrame(columns=columns)
@@ -73,10 +146,28 @@ class ArticlesProcessor:
             self.articles["Title"] = self.articles["title"]
             self.articles["Keywords"] = self.articles["keywords"].apply(lambda kws: ", ".join(kw[2:] for kw in kws))
             self.articles["URL"] = self.articles["url"]
+            # --- 修正 ---
+            # gemini_translation が True の場合のみ実行
+            if self.translation_enabled:
+                print(f"Translating abstracts with {self.translation_provider} ({self.translation_model})...")
+                if "abstract" in self.articles.columns:
+                    self.articles["Abstract_JP"] = self.articles["abstract"].apply(
+                        lambda x: translate_abstract(
+                            x, 
+                            self.translation_provider, 
+                            self.translation_model, 
+                            self.translation_api_key,
+                            self.translation_prompt
+                        )
+                    )
+                else:
+                    self.articles["Abstract_JP"] = ""
+            else:
+                self.articles["Abstract_JP"] = ""
 
     def select_last_columns(self) -> None:
         """Selects and rearranges the final set of columns for the DataFrame."""
-        expected_columns = ["DOI", "Date", "PostedDate", "IsPreprint", "Title", "Keywords", "Preprint", "URL"]
+        expected_columns = ["DOI", "Date", "PostedDate", "IsPreprint", "Title", "Keywords", "Preprint", "Abstract_JP",  "URL"]
         if self.articles.empty:
             self.articles["Preprint"] = []
             # Create empty DataFrame with expected columns
