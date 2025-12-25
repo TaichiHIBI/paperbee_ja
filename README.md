@@ -46,46 +46,7 @@ pip install -e .
 ```
 
 ## 📝 セットアップガイド
-### 1. Google Sheets の連携
-1. Googleサービスアカウントの作成: [公式ガイド](https://cloud.google.com/iam/docs/service-accounts-create) 検索した論文をスプレッドシートに書き込むために必要です。
-
-2. JSONキーの作成: [公式ガイド](https://cloud.google.com/iam/docs/keys-create-delete) ダウンロードしたJSONファイルを安全な場所に保存してください。
-
-3. Google Sheets APIの有効化: [Google Cloud Console](https://console.cloud.google.com/) で、サービスアカウントに対してGoogle Sheets APIを有効にします。
-
-4. Googleスプレッドシートの作成: [こちらのテンプレート](https://docs.google.com/spreadsheets/d/15x3Ei4qtTk70xunuiJCBXyXgRgiY54UgM7EPoZw9iLY/edit?usp=drive_link) をコピーして使用できます。
-シートには以下の列が必要です: DOI, Date, PostedDate, IsPreprint, Title, Keywords, Preprint, Abstract_JP (※日本語要約用に追加), URL。 シート名は Papers にする必要があります。
-
-5. スプレッドシートの共有: サービスアカウントのメールアドレスを「編集者」として追加してください。
-
-### 2. 🔑 NCBI APIキーの取得
-PaperBee_jaはPubMedから論文を取得するためにNCBI APIを使用します。 [こちらから無料のAPIキーを取得](https://www.ncbi.nlm.nih.gov/datasets/docs/v2/api/api-keys)してください。
-
-### 3. 📢 投稿チャンネルの設定
-以下のいずれか1つ以上を設定する必要があります。（日本語要約を行いたい場合はSlackを設定してください）
-
-#### 🟣 Slack (推奨/デフォルト)
-1. [Slackアプリを作成](https://api.slack.com/apps/new)します ("From an app manifest" を選択)。
-2. ワークスペースを選択します。
-3. `manifest.json` の内容をコピーして貼り付けます。
-4. アプリを作成し、ワークスペースにインストールします。
-5. OAuth & Permissions で「Bot User OAuth Token」をコピーし、config.yml の bot_token に貼り付けます。
-6. Basic Information -> App-Level Tokens で、connections:write 権限を持つトークンを作成します。
-7. 投稿したいチャンネルのIDを config.yml の SLACK_CHANNEL_ID に設定します。
-
-#### 🔵 Telegram / 🟢 Zulip / 🟠 Mattermost
-(設定方法はオリジナルのドキュメントを参照してください。日本語要約機能は非対応です)
-
-### 4. 🤖 LLMの設定（自動フィルタリング & 翻訳用）
-* 自動フィルタリングや日本語翻訳・要約を使用する場合、LLMの設定が必要です。
-
-#### Ollama (ローカルLLM / 推奨)
-* 好みのモデルをpullします（例: `ollama pull gemma2` や `ollama pull gpt-oss-20b`）。
-* config.yml の LLM_PROVIDER や TRANSLATION_PROVIDER を `ollama` に設定します。
-
-#### OpenAI API / Google Gemini API
-* APIキーを取得し、config.yml に設定します。
-* 各種プロバイダからAPIキーを取得してください。
+[フォーク元のセットアップガイド](https://github.com/theislab/paperbee)に従ってセットアップしてください。
 
 ## ⚙️ 設定ファイル (Configuration)
 PaperBee_jaはすべての設定をYAMLファイルで管理します。 以下のテンプレートを config.yml として保存・編集してください。
