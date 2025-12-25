@@ -1,323 +1,187 @@
-# 🐝 PaperBee
-
+🐝 PaperBee (日本語要約・翻訳対応版)
 <img src="images/paperbee_logo.png" width="200" height="auto" alt="logo"/>
 
-PaperBee is a Python application designed to **automatically search for new scientific papers and post them** to your favorite channels.
-Currently supported platforms:
+⚠️このツールはtheislab/paperbeeを元に、論文要旨の日本語訳・要約機能を付け加えたものです。
 
-- 🟣 Slack
-- 🔵 Telegram
-- 🟢 Zulip
-- 🟠 Mattermost
+PaperBeeは、新しい科学論文を自動的に検索し、お気に入りのチャットツールに投稿するためのPythonアプリケーションです。
 
----
+現在サポートされているプラットフォーム:
 
-## 🚀 How Does It Work?
+🟣 Slack (※日本語要約機能に対応)
 
-![paperbee_pipeline](images/paperbee_pipeline.svg)
+🔵 Telegram
 
-PaperBee queries scientific papers using user-specified keywords from PubMed and preprint services, relying on the [findpapers](https://github.com/jonatasgrosman/findpapers/) library.
-Papers are then filtered either **manually via a command-line interface** or **automatically via an LLM**.
-The filtered papers are posted to a Google Sheet and, if desired, to Slack, Telegram, Zulip or Mattermost channels.
-PaperBee is easy to setup and configure with a simple `yml` file.
+🟢 Zulip
 
----
+🟠 Mattermost
 
-## 📦 Installation
+✨ このバージョンでの変更点：日本語要約・翻訳機能
+本フォーク版では、LLM（Ollama, OpenAI, Gemini）を使用して、論文のアブストラクトを自動的に日本語に翻訳・要約する機能を追加しています。
 
-### 1. Download the Code and Install Dependencies
+⚠️ 重要なお知らせ
+日本語でのアブストラクト要約・翻訳出力は、現在「Slack (🟣)」のみに対応しています。 他のプラットフォーム（Telegram, Zulip, Mattermost）では、通常の英語タイトルとリンクのみが表示されます。
 
-```bash
-pip install paperbee
-```
+🚀 仕組み
+PaperBeeは、findpapers ライブラリを使用して、指定されたキーワードでPubMed、arXiv、bioRxivから科学論文を検索します。
 
----
+取得した論文は、コマンドラインでの手動選別、または LLMによる自動フィルタリング によって選別されます。 選別された論文はGoogleスプレッドシートに記録され、Slackなどのチャンネルに通知されます。 設定はシンプルな config.yml ファイルで行います。
 
-## 📝 Setup Guide
+📦 インストール
+ソースコードを修正しているため、以下の手順でインストールしてください（開発モード）：
 
-### 1. Google Sheets Integration
+Bash
 
-1. **Create a Google Service Account:**
-   [Official guide](https://cloud.google.com/iam/docs/service-accounts-create)
-   Needed to write found papers to a Google Spreadsheet.
-2. **Create a JSON Key:**
-   [Official guide](https://cloud.google.com/iam/docs/keys-create-delete)
-   Download and store the JSON file securely.
-3. **Enable Google Sheets API:**
-   In [Google Cloud Console](https://console.cloud.google.com/), enable the Google Sheets API for your service account.
-4. **Create a Google Spreadsheet:**
-   You can copy this [template](https://docs.google.com/spreadsheets/d/13QqH13psraWsTG5GJ7jrqA8PkUvP_HlzO90BMxYwzYw/).
-   The sheet must have columns: `DOI`, `Date`, `PostedDate`, `IsPreprint`, `Title`, `Keywords`, `Preprint`, `URL`.
-   The sheet name must be `Papers`.
-5. **Share the Spreadsheet:**
-   Add the service account email as an _Editor_.
+# プロジェクトのルートディレクトリで実行
+pip install -e .
+📝 セットアップガイド
+1. Google Sheets の連携
+Googleサービスアカウントの作成: 公式ガイド 検索した論文をスプレッドシートに書き込むために必要です。
 
----
+JSONキーの作成: 公式ガイド ダウンロードしたJSONファイルを安全な場所に保存してください。
 
-### 2. 🔑 Get NCBI API Key
+Google Sheets APIの有効化: Google Cloud Console で、サービスアカウントに対してGoogle Sheets APIを有効にします。
 
-PaperBee uses the NCBI API to fetch papers and DOIs from PubMed.
-[Get your free API key here.](https://www.ncbi.nlm.nih.gov/datasets/docs/v2/api/api-keys)
+Googleスプレッドシートの作成: こちらのテンプレートをコピーして使用できます。 シートには以下の列が必要です: DOI, Date, PostedDate, IsPreprint, Title, Keywords, Preprint, URL, Abstract_JP (※日本語要約用に追加)。 シート名は Papers にする必要があります。
 
----
+スプレッドシートの共有: サービスアカウントのメールアドレスを「編集者」として追加してください。
 
-### 3. 📢 Setup Posting Channels
+2. 🔑 NCBI APIキーの取得
+PaperBeeはPubMedから論文を取得するためにNCBI APIを使用します。 こちらから無料のAPIキーを取得してください。
 
-> **You must set up at least one of the four platforms below.**
+3. 📢 投稿チャンネルの設定
+以下のいずれか1つ以上を設定する必要があります。（日本語要約を行いたい場合はSlackを設定してください）
 
-#### 🟣 Slack (optional)
+🟣 Slack (推奨)
+Slackアプリを作成 します ("From an app manifest" を選択)。
 
-1. [Create a Slack App](https://api.slack.com/apps/new) (choose "From an app manifest").
-2. Choose your workspace.
-3. Copy the contents of `manifest.json` into the manifest box.
-4. Review and create the app.
-5. In **Install App** , install to Workspace and allow permissions. It is possible that you need to add a Bot Token Scope before installing, if that is the case, go to **OAuth & Permissions** -> **Scopes** and add a Bot Token Scope (any Bot Token Scope is good).
-6. In **OAuth & Permissions**, copy the Bot User OAuth Token and paste it in the `bot_token` in the `config.yml` file.
-7. In **Basic Information** -> **App-Level Tokens**, create an app-level token with `connections:write` scope.
-8. Set `SLACK_CHANNEL_ID` in the `config.yml` file to your desired channel's ID.
+ワークスペースを選択します。
 
-Update the **SLACK** variables in the `config.yml` file.
+manifest.json の内容をコピーして貼り付けます。
 
-#### 🔵 Telegram (optional)
+アプリを作成し、ワークスペースにインストールします。
 
-1. Create a Telegram bot [Follow the instructions here](https://core.telegram.org/bots/#how-do-i-create-a-bot).
-2. Create a channel or group, add the bot as admin.
-3. Use [@myidbot](https://t.me/myidbot) to get the channel ID.
+OAuth & Permissions で「Bot User OAuth Token」をコピーし、config.yml の bot_token に貼り付けます。
 
-Update the **TELEGRAM** variables in the `config.yml` file.
+Basic Information -> App-Level Tokens で、connections:write 権限を持つトークンを作成します。
 
-#### 🟢 Zulip (optional)
+投稿したいチャンネルのIDを config.yml の SLACK_CHANNEL_ID に設定します。
 
-1. [Create a Zulip bot](https://zulip.com/help/add-a-bot-or-integration) and download the `zuliprc` file.
-2. Create a stream and subscribe the bot.
+🔵 Telegram / 🟢 Zulip / 🟠 Mattermost
+(設定方法はオリジナルのドキュメントを参照してください。日本語要約機能は非対応です)
 
-Update the **ZULIP** variables in the `config.yml` file.
+4. 🤖 LLMの設定（自動フィルタリング & 翻訳用）
+自動フィルタリングや日本語翻訳・要約を使用する場合、LLMの設定が必要です。
 
-#### 🟠 Mattermost (optional)
+Ollama (ローカルLLM / 推奨)
+Ollamaをダウンロード
 
-1. You have to enable personal access tokens in Mattermost. If you are not the admin of the Mattermost server, you will need to ask the admin to enable personal access tokens. Follow [these instructions](https://developers.mattermost.com/integrate/reference/personal-access-token/), step 1. 
-2. The admin of the Mattermost server needs to give permission to your user account to create a personal access token. If you are not the admin of the Mattermost server, ask the admin of the Mattermost server to grant you permission to create a personal access token. Follow the previously linked instructions, steps 2-4.
-3. Create the personal access token with your user account. Also follow the previously linked instructions, steps 5-8. When you create the personal access token, copy the “Access Token” (highlighted in bold), and paste it in the `token` in the **MATTERMOST** variables of the `config.yml` file.
+好みのモデルをpullします（例: ollama pull gemma2 や ollama pull llama3）。
 
-Update the **MATTERMOST** variables in the `config.yml` file. The `url`, `team` and `channel` variables can be found out from the URL of the channel where you want to post the papers. For example, if the URL of the channel is https://mattermost.example.com/research-group/channels/test-paperbee, `url` is “mattermost.example.com”, `team` is “research-group” and `channel` is “test-paperbee”.
+config.yml の LLM_PROVIDER や TRANSLATION_PROVIDER を ollama に設定します。
 
----
+OpenAI API / Google Gemini API
+APIキーを取得し、config.yml に設定します。
 
-### 4. 🤖 Setup LLM for Automated Filtering (optional, but recommended)
+⚙️ 設定ファイル (Configuration)
+PaperBeeはすべての設定をYAMLファイルで管理します。 以下のテンプレートを config.yml として保存・編集してください。
 
-> If you want to use LLM filtering, remember to add a `filtering_prompt.txt` file.
-> See [Setup Query and LLM Filtering Prompt](#setup-query-and-llm-filtering-prompt).
+config.yml の例（日本語要約機能付き）
+YAML
 
-#### OpenAI API
-
-The OpenAI API is not free, but it is really cheap, usually 5$ is more than enough for a year of everyday LLM filtering.
-
-- [Sign up for OpenAI](https://platform.openai.com/signup)
-- [Get your API key](https://platform.openai.com/settings/organization/api-keys)
-- Add credits to your account.
-
-#### Ollama (Open Source LLMs)
-
-- [Download Ollama](https://ollama.com/download/)
-- Pull your preferred model (e.g., `ollama pull llama3.2`).
-
-Update the **LLM** variables in the `config.yml` file. (LLM_PROVIDER, LANGUAGE_MODEL, OPENAI_API_KEY)
-
----
-
-## ⚙️ Configuration
-
-PaperBee uses a YAML configuration file to specify all arguments.
-Copy and customize the template below as `config.yml`:
-
-### Example `config.yml`
-
-```yaml
 GOOGLE_SPREADSHEET_ID: "your-google-spreadsheet-id"
 GOOGLE_CREDENTIALS_JSON: "/path/to/your/google-credentials.json"
 NCBI_API_KEY: "your-ncbi-api-key"
 
-# path to the local root directory where query prompts and files are stored
+# ローカルルートディレクトリへのパス
 LOCAL_ROOT_DIR: "/path/to/local/root/dir"
 
-# Queries. You can set either only "query" to use in all databases or query_biorxiv and query_pubmed_arxiv.
-# Note that biorxiv only accept OR boolean operator while pubmed and arxiv also accept AND and AND NOT, this is why tje two queries are separated.
-# More info: https://github.com/jonatasgrosman/findpapers?tab=readme-ov-file#search-query-construction
-query: "[AI for cell trajectories] OR [machine learning for cell trajectories] OR [deep learning for cell trajectories] OR [AI for cell dynamics] OR [machine learning for cell dynamics] OR [deep learning for cell dynamics]"
-query_biorxiv: "[AI for cell trajectories] OR [machine learning for cell trajectories] OR [deep learning for cell trajectories] OR [AI for cell dynamics] OR [machine learning for cell dynamics] OR [deep learning for cell dynamics]"
-query_pubmed_arxiv: "([single-cell transcriptomics]) AND ([Cell Dynamics]) AND ([AI] OR [machine learning] OR [deep learning]) AND NOT ([proteomics])"
+# 検索クエリ設定
+# bioRxivは複雑なクエリに対応していないため、単純なOR検索のみ記述します
+query_biorxiv: "[machine learning for single-cell] OR [deep learning for single-cell] OR [AI for single-cell]"
 
-# LLM Filtering (optional)
+# PubMed/arXiv用クエリ (AND, OR, NOTが使用可能)
+query_pubmed_arxiv: "([single-cell transcriptomics]) AND ([AI] OR [machine learning] OR [deep learning])"
+
+# -----------------------------------------------------------------------------
+# LLMフィルタリング設定 (オプション)
+# -----------------------------------------------------------------------------
 LLM_FILTERING: true
-LLM_PROVIDER: "openai"
-LANGUAGE_MODEL: "gpt-4o-mini"
-OPENAI_API_KEY: "your-openai-api-key"
-# Describe what are your interests and what kind of papers are relevant to your lab.
-# Change lab focus and interests to your own. Feel free to add more details and examples, but leave the last sentence as is.
-FILTERING_PROMPT: "You are a lab manager at a research lab focusing on machine learning methods development for single-cell RNA sequencing. Lab members are interested in developing methods to model cell dynamics. You are reviewing a list of research papers to determine if they are relevant to your lab. Please answer 'yes' or 'no' to the following question: Is the following research paper relevant?"
+LLM_PROVIDER: "ollama"       # "ollama" または "openai"
+LANGUAGE_MODEL: "gemma2"     # 使用するモデル名 (例: gemma2, llama3, gpt-4o-mini)
+# OPENAI_API_KEY: "your-key"
 
-# Slack configuration
+# フィルタリング用プロンプト
+# 興味のある分野や、除外したい論文の条件を記述します。
+FILTERING_PROMPT: |
+  You are a researcher in a computational biology lab. Your goal is to identify papers that propose **novel algorithms**.
+  Criteria for Relevance (YES):
+  - Proposes a new algorithm or method.
+  - Applicable to human data.
+  Criteria for Exclusion (NO):
+  - Purely clinical studies.
+  - Review papers.
+  Please answer 'yes' or 'no' to the following question: Is the following research paper relevant?
+
+# -----------------------------------------------------------------------------
+# 🇯🇵 日本語翻訳・要約設定 (本フォーク版の機能)
+# -----------------------------------------------------------------------------
+TRANSLATION_ENABLED: true
+TRANSLATION_PROVIDER: "ollama"      # "ollama", "openai", "gemini"
+TRANSLATION_MODEL: "gemma2"         # モデル名は環境に合わせてください
+TRANSLATION_API_KEY: ""             # OpenAI/Geminiの場合のみ必要
+
+# 翻訳・要約用プロンプト ({text} の部分に原文が挿入されます)
+TRANSLATION_PROMPT: |
+  以下の科学論文のアブストラクトを、日本語で3点の箇条書きに要約してください。
+  出力は日本語の要約のみを行ってください。
+
+# -----------------------------------------------------------------------------
+# Slack設定 (日本語要約対応)
+# -----------------------------------------------------------------------------
 SLACK:
   is_posting_on: true
-  bot_token: "your-slack-bot-token"
-  channel_id: "your-slack-channel-id"
-  app_token: "your-slack-app-token"
+  bot_token: "xoxb-..."
+  channel_id: "C0..."
+  app_token: "xapp-..."
 
-# Telegram configuration
+# その他のプラットフォーム設定...
 TELEGRAM:
-  is_posting_on: true
-  bot_token: "your-telegram-bot-token"
-  channel_id: "your-telegram-channel-id"
-
-# Zulip configuration
-ZULIP:
   is_posting_on: false
-  prc: "path-to-your-zulip-prc"
-  stream: "your-zulip-stream"
-  topic: "your-zulip-topic"
+  # ...
+▶️ Botの実行
+設定が完了したら、以下のコマンドで実行します。
 
-# Mattermost configuration
-MATTERMOST:
-  is_posting_on: true             
-  url: "your-mattermost-url"        # e.g. mattermost.example.com (do NOT include https://)
-  token: "your-mattermost-token"
-  team: "your-mattermost-team-name" # The team name (not display name)
-  channel: "your-channel-name" # The channel name (not display name)
+コマンドラインからの実行
+Bash
 
-SLACK_TEST_CHANNEL_ID: "your-slack-test-channel-id" # not required so left outside of dictionary
-TELEGRAM_TEST_CHANNEL_ID: "your-slack-test-channel-id" # not required so left outside of dictionary
-GOOGLE_TEST_SPREADSHEET_ID: "your-google-test-spreadsheet-id" # not required so left outside of dictionary
-```
+# 過去1日分の論文を検索し、自動でフィルタリング・要約してSlackに投稿
+paperbee post --config /path/to/config.yml --since 1
+--config : 設定ファイルのパス。
 
----
+--since : 何日前まで遡って検索するか（デフォルト: 1日）。
 
-### 📄 Example Query and Prompt
+--interactive : (オプション) これを付けると、LLMフィルタリングの後に手動で Yes/No を選択できます。自動化する場合は付けないでください。
 
-#### `query`
+--databases: (オプション) 検索対象データベースを指定します（例: pubmed biorxiv arxiv）。
 
-If specifying a list of keyword is enough, you can simply fit one query for all databases. Example:
+自動実行（cron）
+毎日午前9時に実行する場合のcron設定例:
 
-```text
-[AI for cell trajectories] OR [machine learning for cell trajectories] OR [deep learning for cell trajectories] OR [AI for cell dynamics] OR [machine learning for cell dynamics] OR [deep learning for cell dynamics]
-```
+Bash
 
-Both Arxiv and Pubmed allow for more refined queries.
-If you want to fine-tune the queries for pubmed and arxiv which allow for both AND and AND NOT boolean operators, then you will need to split the queries in two (read below).
+0 9 * * * /path/to/your/venv/bin/paperbee post --config /path/to/config.yml --since 1
+🗂️ プロジェクト構造（主な変更点）
+src/PaperBee/papers/utils.py – 翻訳機能 (translate_abstract) を追加。
 
-#### `query_biorxiv`
+src/PaperBee/papers/slack_papers_formatter.py – 日本語要約を表示できるようにフォーマットを修正。
 
-This database has more requirements, so if your query is complex, you have to set a separate simple query for biorxiv, and a complex query for everything else. See [findpapers documentation](https://github.com/jonatasgrosman/findpapers?tab=readme-ov-file#search-query-construction) for more details. TLDR:
+src/PaperBee/daily_posting.py – 設定ファイルから翻訳オプションを読み込むように修正。
 
-- Only **1-level grouping** is supported: no round brackets inside round brackets
-- **Only OR connectors between parenthesis** are allowed, no `() AND ()`!
-- **AND NOT is not allowed**
-- All connectors must be either OR or AND. **No mixing**!
+src/PaperBee/papers/papers_finder.py – 翻訳フローを統合。
 
-Here's an example of a valid query:
+📚 Reference
+Original PaperBee:
 
-```text
-[AI for cell trajectories] OR [machine learning for cell trajectories] OR [deep learning for cell trajectories] OR [AI for cell dynamics] OR [machine learning for cell dynamics] OR [deep learning for cell dynamics]
-```
-
-#### `query_pubmed_arxiv.txt`
-
-Pubmed and Arxiv don't have such requirements, so query can be more complex:
-
-```text
-([single-cell transcriptomics]) AND ([Cell Dynamics]) AND ([AI] OR [machine learning] OR [deep learning]) AND NOT ([proteomics])
-```
-
-#### `filtering_prompt`
-
-Simply describe your lab interests, which type of papers you want to see and which you don't. The more details, the better! But always leave the last sentence with the question as is. Here is an example:
-
-```text
-You are a lab manager at a research lab focusing on machine learning methods development for single-cell RNA sequencing. Lab members are interested in developing methods to model cell dynamics. You are reviewing a list of research papers to determine if they are relevant to your lab. Please answer 'yes' or 'no' to the following question: Is the following research paper relevant?
-```
-
----
-
-## ▶️ Running the Bot
-
-### From command line
-When everything is set up, run the bot with:
-
-```bash
-paperbee post --config /path/to/config.yml --interactive --since 10
-```
-
-- `--config` : Path to your YAML configuration file.
-- `--interactive` : (Optional) Use CLI for manual filtering.
-- `--since` : (Optional) How many days back to search for papers (default: last 24h).
-- `--databases`: (Optional) list of databases to search, default pubmed biorxiv
-
-### Automatic daily search
-
-To set up the automatic daily posting, you can schedule a cron job. For example, to run the search daily at 9 AM:
-1. Open `crontab` where you can add scheduled tasks by running `crontab -e` in your terminal
-2. Add there the following line: `0 9 * * * paperbee post --config /path/to/config.yml --since 1`
-
-### Running from Python
-
-See and example in the [daily_posting.py](src/PaperBee/daily_posting.py).
-
----
-
-## 🗂️ Project Structure
-
-### `manifest.json`
-
-Configuration for Slack apps.
-With a manifest, you can create or adjust an app with a pre-defined configuration.
-
-### `src/PaperBee/papers`
-
-Classes to fetch, format, and post papers, and update the Google Sheet.
-
-- `utils.py` – Preprocess `findpapers` output, extract DOIs.
-- `google_sheet.py` – Update/check the Google Sheet.
-- `llm_filtering.py` – Filter papers with LLMs.
-- `cli.py` – Interactive CLI filtering.
-- `slack_papers_formatter.py` – Format and post to Slack.
-- `zulip_papers_formatter.py` – Format and post to Zulip.
-- `telegram_papers_formatter.py` – Format and post to Telegram.
-- `papers_finder.py` – Main wrapper class.
-- `daily_posting.py` – CLI entry point.
-
----
-
-## 🧪 Running Tests (Optional)
-
-You can set up test channels for Slack/Telegram or run tests in production channels.
-Set the following variables in your `config.yml`:
-
-- `TELEGRAM_TEST_CHANNEL_ID` – Telegram test channel ID.
-- `SLACK_TEST_CHANNEL_ID` – Slack test channel ID.
-- `GOOGLE_TEST_SPREADSHEET_ID` – Test spreadsheet ID. **Don't use a production spreadsheet!**
-
-**Install extra dependencies:**
-
-```bash
-pip install pytest-asyncio
-```
-
-or with Poetry:
-
-```bash
-poetry install --with dev
-```
-
-**Run the tests:**
-
-```bash
-pytest
-```
-
----
-
-# Reference
-
-```
 @misc{shitov_patpy_2024,
   author = {Lucarelli, Daniele and Shitov, Vladimir A. and Saur, Dieter and Zappia, Luke and Theis, Fabian J.},
   title = {PaperBee: An Automated Daily Digest Bot for Scientific Literature Monitoring},
@@ -325,6 +189,3 @@ pytest
   url = {https://github.com/theislab/paperbee},
   note = {Version 1.2.0}
 }
-```
-
-Enjoy using 🐝 **PaperBee**!
