@@ -1,7 +1,7 @@
 # 🐝 PaperBee (日本語要約・翻訳対応版)
 <img src="images/paperbee_logo.png" width="200" height="auto" alt="logo"/>
 
-⚠️このツールはtheislab/paperbeeを元に、論文要旨の日本語訳・要約機能を付け加えたものです。
+⚠️このツールは [theislab/paperbee](https://github.com/theislab/paperbee) を元に、論文要旨の日本語訳・要約機能を付け加えたものです。
 
 PaperBeeは、新しい科学論文を自動的に検索し、お気に入りのチャットツールに投稿するためのPythonアプリケーションです。
 
