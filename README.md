@@ -5,7 +5,7 @@
 
 PaperBeeは、新しい科学論文を自動的に検索し、お気に入りのチャットツールに投稿するためのPythonアプリケーションです。
 
-現在サポートされているプラットフォーム:
+### 現在サポートされているプラットフォーム:
 
 🟣 Slack (※日本語要約機能に対応)
 
@@ -18,15 +18,24 @@ PaperBeeは、新しい科学論文を自動的に検索し、お気に入りの
 ## ✨ このバージョンでの変更点：日本語要約・翻訳機能
 本フォーク版では、LLM（Ollama, OpenAI, Gemini）を使用して、論文のアブストラクトを自動的に日本語に翻訳・要約する機能を追加しています。
 
-⚠️ 重要なお知らせ
+### ⚠️ 重要なお知らせ
 日本語でのアブストラクト要約・翻訳出力は、現在「Slack (🟣)」のみに対応しています。 他のプラットフォーム（Telegram, Zulip, Mattermost）では、通常の英語タイトルとリンクのみが表示されます。
 
-🚀 仕組み
+### 🚀 仕組み
 PaperBeeは、findpapers ライブラリを使用して、指定されたキーワードでPubMed、arXiv、bioRxivから科学論文を検索します。
 
 取得した論文は、コマンドラインでの手動選別、または LLMによる自動フィルタリング によって選別されます。 選別された論文はGoogleスプレッドシートに記録され、Slackなどのチャンネルに通知されます。 設定はシンプルな config.yml ファイルで行います。
 
-📦 インストール
+### 🗂️ プロジェクト構造（主な変更点）
+* src/PaperBee/papers/utils.py – 翻訳機能 (translate_abstract) を追加。
+
+* src/PaperBee/papers/slack_papers_formatter.py – 日本語要約を表示できるようにフォーマットを修正。
+
+* src/PaperBee/daily_posting.py – 設定ファイルから翻訳オプションを読み込むように修正。
+
+* src/PaperBee/papers/papers_finder.py – 翻訳フローを統合。
+
+## 📦 インストール
 ソースコードを修正しているため、以下の手順でインストールしてください：
 
 ```bash
@@ -38,20 +47,19 @@ pip install -e .
 
 ## 📝 セットアップガイド
 ### 1. Google Sheets の連携
-Googleサービスアカウントの作成: [公式ガイド](https://cloud.google.com/iam/docs/service-accounts-create) 検索した論文をスプレッドシートに書き込むために必要です。
+1. Googleサービスアカウントの作成: [公式ガイド](https://cloud.google.com/iam/docs/service-accounts-create) 検索した論文をスプレッドシートに書き込むために必要です。
 
-JSONキーの作成: [公式ガイド](https://cloud.google.com/iam/docs/keys-create-delete) ダウンロードしたJSONファイルを安全な場所に保存してください。
+2. JSONキーの作成: [公式ガイド](https://cloud.google.com/iam/docs/keys-create-delete) ダウンロードしたJSONファイルを安全な場所に保存してください。
 
-Google Sheets APIの有効化: [Google Cloud Console](https://console.cloud.google.com/) で、サービスアカウントに対してGoogle Sheets APIを有効にします。
+3. Google Sheets APIの有効化: [Google Cloud Console](https://console.cloud.google.com/) で、サービスアカウントに対してGoogle Sheets APIを有効にします。
 
-Googleスプレッドシートの作成: [こちらのテンプレート](https://docs.google.com/spreadsheets/d/15x3Ei4qtTk70xunuiJCBXyXgRgiY54UgM7EPoZw9iLY/edit?usp=drive_link) をコピーして使用できます。
+4. Googleスプレッドシートの作成: [こちらのテンプレート](https://docs.google.com/spreadsheets/d/15x3Ei4qtTk70xunuiJCBXyXgRgiY54UgM7EPoZw9iLY/edit?usp=drive_link) をコピーして使用できます。
+シートには以下の列が必要です: DOI, Date, PostedDate, IsPreprint, Title, Keywords, Preprint, Abstract_JP (※日本語要約用に追加), URL。 シート名は Papers にする必要があります。
 
-シートには以下の列が必要です: DOI, Date, PostedDate, IsPreprint, Title, Keywords, Preprint, URL, Abstract_JP (※日本語要約用に追加)。 シート名は Papers にする必要があります。
-
-スプレッドシートの共有: サービスアカウントのメールアドレスを「編集者」として追加してください。
+5. スプレッドシートの共有: サービスアカウントのメールアドレスを「編集者」として追加してください。
 
 ### 2. 🔑 NCBI APIキーの取得
-PaperBeeはPubMedから論文を取得するためにNCBI APIを使用します。 [こちらから無料のAPIキーを取得](https://www.ncbi.nlm.nih.gov/datasets/docs/v2/api/api-keys)してください。
+PaperBee_jaはPubMedから論文を取得するためにNCBI APIを使用します。 [こちらから無料のAPIキーを取得](https://www.ncbi.nlm.nih.gov/datasets/docs/v2/api/api-keys)してください。
 
 ### 3. 📢 投稿チャンネルの設定
 以下のいずれか1つ以上を設定する必要があります。（日本語要約を行いたい場合はSlackを設定してください）
@@ -167,14 +175,6 @@ paperbee post --config /path/to/config.yml --since 1 --databases pubmed biorxiv
 ```Bash
 0 9 * * * /path/to/your/venv/bin/paperbee post --config /path/to/config.yml --since 1 --databases pubmed biorxiv
 ```
-## 🗂️ プロジェクト構造（主な変更点）
-* src/PaperBee/papers/utils.py – 翻訳機能 (translate_abstract) を追加。
-
-* src/PaperBee/papers/slack_papers_formatter.py – 日本語要約を表示できるようにフォーマットを修正。
-
-* src/PaperBee/daily_posting.py – 設定ファイルから翻訳オプションを読み込むように修正。
-
-* src/PaperBee/papers/papers_finder.py – 翻訳フローを統合。
 
 ## 📚 Reference
 Original PaperBee:
