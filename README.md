@@ -15,7 +15,7 @@ PaperBeeは、新しい科学論文を自動的に検索し、お気に入りの
 
 🟠 Mattermost
 
-✨ このバージョンでの変更点：日本語要約・翻訳機能
+## ✨ このバージョンでの変更点：日本語要約・翻訳機能
 本フォーク版では、LLM（Ollama, OpenAI, Gemini）を使用して、論文のアブストラクトを自動的に日本語に翻訳・要約する機能を追加しています。
 
 ⚠️ 重要なお知らせ
@@ -27,67 +27,65 @@ PaperBeeは、findpapers ライブラリを使用して、指定されたキー�
 取得した論文は、コマンドラインでの手動選別、または LLMによる自動フィルタリング によって選別されます。 選別された論文はGoogleスプレッドシートに記録され、Slackなどのチャンネルに通知されます。 設定はシンプルな config.yml ファイルで行います。
 
 📦 インストール
-ソースコードを修正しているため、以下の手順でインストールしてください（開発モード）：
+ソースコードを修正しているため、以下の手順でインストールしてください：
 
-Bash
-
-# プロジェクトのルートディレクトリで実行
+```bash
+git clone https://github.com/TaichiHIBI/paperbee_ja.git
+cd paperbee_ja
+# 必要なら仮想環境有効化
 pip install -e .
-📝 セットアップガイド
-1. Google Sheets の連携
-Googleサービスアカウントの作成: 公式ガイド 検索した論文をスプレッドシートに書き込むために必要です。
+```
 
-JSONキーの作成: 公式ガイド ダウンロードしたJSONファイルを安全な場所に保存してください。
+## 📝 セットアップガイド
+### 1. Google Sheets の連携
+Googleサービスアカウントの作成: [公式ガイド](https://cloud.google.com/iam/docs/service-accounts-create) 検索した論文をスプレッドシートに書き込むために必要です。
 
-Google Sheets APIの有効化: Google Cloud Console で、サービスアカウントに対してGoogle Sheets APIを有効にします。
+JSONキーの作成: [公式ガイド](https://cloud.google.com/iam/docs/keys-create-delete) ダウンロードしたJSONファイルを安全な場所に保存してください。
 
-Googleスプレッドシートの作成: こちらのテンプレートをコピーして使用できます。 シートには以下の列が必要です: DOI, Date, PostedDate, IsPreprint, Title, Keywords, Preprint, URL, Abstract_JP (※日本語要約用に追加)。 シート名は Papers にする必要があります。
+Google Sheets APIの有効化: [Google Cloud Console](https://console.cloud.google.com/) で、サービスアカウントに対してGoogle Sheets APIを有効にします。
+
+Googleスプレッドシートの作成: [こちらのテンプレート](https://docs.google.com/spreadsheets/d/15x3Ei4qtTk70xunuiJCBXyXgRgiY54UgM7EPoZw9iLY/edit?usp=drive_link) をコピーして使用できます。
+
+シートには以下の列が必要です: DOI, Date, PostedDate, IsPreprint, Title, Keywords, Preprint, URL, Abstract_JP (※日本語要約用に追加)。 シート名は Papers にする必要があります。
 
 スプレッドシートの共有: サービスアカウントのメールアドレスを「編集者」として追加してください。
 
-2. 🔑 NCBI APIキーの取得
-PaperBeeはPubMedから論文を取得するためにNCBI APIを使用します。 こちらから無料のAPIキーを取得してください。
+### 2. 🔑 NCBI APIキーの取得
+PaperBeeはPubMedから論文を取得するためにNCBI APIを使用します。 [こちらから無料のAPIキーを取得](https://www.ncbi.nlm.nih.gov/datasets/docs/v2/api/api-keys)してください。
 
-3. 📢 投稿チャンネルの設定
+### 3. 📢 投稿チャンネルの設定
 以下のいずれか1つ以上を設定する必要があります。（日本語要約を行いたい場合はSlackを設定してください）
 
-🟣 Slack (推奨)
-Slackアプリを作成 します ("From an app manifest" を選択)。
+#### 🟣 Slack (推奨/デフォルト)
+1. [Slackアプリを作成](https://api.slack.com/apps/new)します ("From an app manifest" を選択)。
+2. ワークスペースを選択します。
+3. `manifest.json` の内容をコピーして貼り付けます。
+4. アプリを作成し、ワークスペースにインストールします。
+5. OAuth & Permissions で「Bot User OAuth Token」をコピーし、config.yml の bot_token に貼り付けます。
+6. Basic Information -> App-Level Tokens で、connections:write 権限を持つトークンを作成します。
+7. 投稿したいチャンネルのIDを config.yml の SLACK_CHANNEL_ID に設定します。
 
-ワークスペースを選択します。
-
-manifest.json の内容をコピーして貼り付けます。
-
-アプリを作成し、ワークスペースにインストールします。
-
-OAuth & Permissions で「Bot User OAuth Token」をコピーし、config.yml の bot_token に貼り付けます。
-
-Basic Information -> App-Level Tokens で、connections:write 権限を持つトークンを作成します。
-
-投稿したいチャンネルのIDを config.yml の SLACK_CHANNEL_ID に設定します。
-
-🔵 Telegram / 🟢 Zulip / 🟠 Mattermost
+#### 🔵 Telegram / 🟢 Zulip / 🟠 Mattermost
 (設定方法はオリジナルのドキュメントを参照してください。日本語要約機能は非対応です)
 
-4. 🤖 LLMの設定（自動フィルタリング & 翻訳用）
-自動フィルタリングや日本語翻訳・要約を使用する場合、LLMの設定が必要です。
+### 4. 🤖 LLMの設定（自動フィルタリング & 翻訳用）
+* 自動フィルタリングや日本語翻訳・要約を使用する場合、LLMの設定が必要です。
 
-Ollama (ローカルLLM / 推奨)
-Ollamaをダウンロード
+#### Ollama (ローカルLLM / 推奨)
+* 好みのモデルをpullします（例: `ollama pull gemma2` や `ollama pull gpt-oss-20b`）。
+* config.yml の LLM_PROVIDER や TRANSLATION_PROVIDER を `ollama` に設定します。
 
-好みのモデルをpullします（例: ollama pull gemma2 や ollama pull llama3）。
+#### OpenAI API / Google Gemini API
+* APIキーを取得し、config.yml に設定します。
+* 各種プロバイダからAPIキーを取得してください。
 
-config.yml の LLM_PROVIDER や TRANSLATION_PROVIDER を ollama に設定します。
-
-OpenAI API / Google Gemini API
-APIキーを取得し、config.yml に設定します。
-
-⚙️ 設定ファイル (Configuration)
-PaperBeeはすべての設定をYAMLファイルで管理します。 以下のテンプレートを config.yml として保存・編集してください。
+## ⚙️ 設定ファイル (Configuration)
+PaperBee_jaはすべての設定をYAMLファイルで管理します。 以下のテンプレートを config.yml として保存・編集してください。
 
 config.yml の例（日本語要約機能付き）
-YAML
 
+⚠️queryの書き方やFiltering promptの形式はもとの手法を参照してください。
+```YAML
 GOOGLE_SPREADSHEET_ID: "your-google-spreadsheet-id"
 GOOGLE_CREDENTIALS_JSON: "/path/to/your/google-credentials.json"
 NCBI_API_KEY: "your-ncbi-api-key"
@@ -130,7 +128,7 @@ TRANSLATION_PROVIDER: "ollama"      # "ollama", "openai", "gemini"
 TRANSLATION_MODEL: "gemma2"         # モデル名は環境に合わせてください
 TRANSLATION_API_KEY: ""             # OpenAI/Geminiの場合のみ必要
 
-# 翻訳・要約用プロンプト ({text} の部分に原文が挿入されます)
+# 翻訳・要約用プロンプト
 TRANSLATION_PROMPT: |
   以下の科学論文のアブストラクトを、日本語で3点の箇条書きに要約してください。
   出力は日本語の要約のみを行ってください。
@@ -140,48 +138,47 @@ TRANSLATION_PROMPT: |
 # -----------------------------------------------------------------------------
 SLACK:
   is_posting_on: true
-  bot_token: "xoxb-..."
-  channel_id: "C0..."
-  app_token: "xapp-..."
+  bot_token: "your_slack_bot_token"
+  channel_id: "your_slack_channel_id"
+  app_token: "your_slack_app_token"
 
 # その他のプラットフォーム設定...
 TELEGRAM:
   is_posting_on: false
   # ...
-▶️ Botの実行
+```
+
+## ▶️ Botの実行
 設定が完了したら、以下のコマンドで実行します。
 
-コマンドラインからの実行
-Bash
-
+### コマンドラインからの実行
+```Bash
 # 過去1日分の論文を検索し、自動でフィルタリング・要約してSlackに投稿
-paperbee post --config /path/to/config.yml --since 1
+paperbee post --config /path/to/config.yml --since 1 --databases pubmed biorxiv
+
 --config : 設定ファイルのパス。
-
 --since : 何日前まで遡って検索するか（デフォルト: 1日）。
-
 --interactive : (オプション) これを付けると、LLMフィルタリングの後に手動で Yes/No を選択できます。自動化する場合は付けないでください。
-
 --databases: (オプション) 検索対象データベースを指定します（例: pubmed biorxiv arxiv）。
+```
 
-自動実行（cron）
+### 自動実行（cron）
 毎日午前9時に実行する場合のcron設定例:
+```Bash
+0 9 * * * /path/to/your/venv/bin/paperbee post --config /path/to/config.yml --since 1 --databases pubmed biorxiv
+```
+## 🗂️ プロジェクト構造（主な変更点）
+* src/PaperBee/papers/utils.py – 翻訳機能 (translate_abstract) を追加。
 
-Bash
+* src/PaperBee/papers/slack_papers_formatter.py – 日本語要約を表示できるようにフォーマットを修正。
 
-0 9 * * * /path/to/your/venv/bin/paperbee post --config /path/to/config.yml --since 1
-🗂️ プロジェクト構造（主な変更点）
-src/PaperBee/papers/utils.py – 翻訳機能 (translate_abstract) を追加。
+* src/PaperBee/daily_posting.py – 設定ファイルから翻訳オプションを読み込むように修正。
 
-src/PaperBee/papers/slack_papers_formatter.py – 日本語要約を表示できるようにフォーマットを修正。
+* src/PaperBee/papers/papers_finder.py – 翻訳フローを統合。
 
-src/PaperBee/daily_posting.py – 設定ファイルから翻訳オプションを読み込むように修正。
-
-src/PaperBee/papers/papers_finder.py – 翻訳フローを統合。
-
-📚 Reference
+## 📚 Reference
 Original PaperBee:
-
+```
 @misc{shitov_patpy_2024,
   author = {Lucarelli, Daniele and Shitov, Vladimir A. and Saur, Dieter and Zappia, Luke and Theis, Fabian J.},
   title = {PaperBee: An Automated Daily Digest Bot for Scientific Literature Monitoring},
@@ -189,3 +186,4 @@ Original PaperBee:
   url = {https://github.com/theislab/paperbee},
   note = {Version 1.2.0}
 }
+```
