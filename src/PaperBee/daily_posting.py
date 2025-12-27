@@ -67,9 +67,11 @@ async def daily_papers_search(
     # ↓ 追加: プロンプトの取得 (デフォルトは全文翻訳)
     default_prompt = "Translate the following scientific abstract into natural Japanese. Output ONLY the Japanese translation:\n\n{text}"
     translation_prompt = str(config.get("TRANSLATION_PROMPT", default_prompt))
+    history_file = str(config.get("HISTORY_FILE", "history.csv"))
     
     finder = PapersFinder(
         root_dir=root_dir,
+        history_file = str(config.get("HISTORY_FILE", "history.csv")),
         spreadsheet_id=config.get("GOOGLE_SPREADSHEET_ID", ""),
         google_credentials_json=config.get("GOOGLE_CREDENTIALS_JSON", ""),
         sheet_name="Papers",
@@ -100,6 +102,7 @@ async def daily_papers_search(
         translation_model=translation_model,
         translation_api_key=translation_api_key,
         translation_prompt=translation_prompt,
+        
     )
     papers, response_slack, response_telegram, response_zulip, response_mattermost = await finder.run_daily(
         post_to_slack=slack_args["is_posting_on"],

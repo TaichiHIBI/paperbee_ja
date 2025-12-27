@@ -56,6 +56,7 @@ class PapersFinder:
         spreadsheet_id: str,
         google_credentials_json: str,
         sheet_name: str,
+        history_file: str = "history.csv",
         since: Optional[int] = None,
         query: Optional[str] = None,
         query_biorxiv: Optional[str] = None,
@@ -87,6 +88,7 @@ class PapersFinder:
         translation_prompt: str = "",
     ) -> None:
         self.root_dir: str = root_dir
+        self.history_file: str = history_file
         # dates
         self.today: date = date.today()
         self.today_str: str = self.today.strftime("%Y-%m-%d")
@@ -253,23 +255,24 @@ class PapersFinder:
         Returns:
             List[List[Any]]: The data that was inserted into the Google Sheet.
         """
-        gsheet_updater = GoogleSheetsUpdater(
-            spreadsheet_id=self.spreadsheet_id,
-            credentials_json_path=self.google_credentials_json,
-        )
-        gsheet_cache = gsheet_updater.read_sheet_data(sheet_name=self.sheet_name)
-        if gsheet_cache:
-            published_dois = [article["DOI"] for article in gsheet_cache]
+        #gsheet_updater = GoogleSheetsUpdater(
+        #    spreadsheet_id=self.spreadsheet_id,
+        #    credentials_json_path=self.google_credentials_json,
+        #)
+        #gsheet_cache = gsheet_updater.read_sheet_data(sheet_name=self.sheet_name)
+        #if gsheet_cache:
+        #    published_dois = [article["DOI"] for article in gsheet_cache]
 
-            processed_articles_filtered = processed_articles[~processed_articles["DOI"].isin(published_dois)]
-        else:  # Sheet is empty (the moment of deployment)
-            processed_articles_filtered = processed_articles
+        #    processed_articles_filtered = processed_articles[~processed_articles["DOI"].isin(published_dois)]
+        #else:  # Sheet is empty (the moment of deployment)
+        #    processed_articles_filtered = processed_articles
 
-        row_data = [list(row) for row in processed_articles_filtered.values.tolist()]
+        #row_data = [list(row) for row in processed_articles_filtered.values.tolist()]
 
-        if row_data:
-            gsheet_updater.insert_rows(sheet_name=self.sheet_name, rows_data=row_data, row=row)
-        return row_data
+        #if row_data:
+        #    gsheet_updater.insert_rows(sheet_name=self.sheet_name, rows_data=row_data, row=row)
+        #return row_data
+        return [list(row) for row in processed_articles.values.tolist()]
 
     def post_paper_to_slack(self, papers: List[List[str]]) -> Any:
         """
@@ -386,7 +389,8 @@ class PapersFinder:
             Tuple[List[List[Any]], Any]: The papers posted and the response from the posting method.
         """
         processed_articles = self.find_and_process_papers()
-        papers = self.update_google_sheet(processed_articles)
+        #papers = self.update_google_sheet(processed_articles)
+        papers = self.update_local_history(processed_articles)
 
         response_slack = None
         response_telegram = None
@@ -428,3 +432,49 @@ class PapersFinder:
             user_query=user_query,
         )
         return processed_articles, response
+    
+    def update_local_history(self, processed_articles: pd.DataFrame) -> List[List[Any]]:
+        """
+        ローカルのCSVファイルを使って既読管理を行い、新しい論文のみを抽出・保存します。
+        """
+        if os.path.isabs(self.history_file):
+            history_file_path = self.history_file
+        else:
+            history_file_path = os.path.join(self.root_dir, self.history_file)
+        
+        # 1. 既存の履歴があれば読み込んで、重複している論文(DOI)を除外する
+        if os.path.exists(history_file_path):
+            try:
+                history_df = pd.read_csv(history_file_path)
+                # DOIカラムが存在する場合のみフィルタリングを行う
+                if "DOI" in history_df.columns:
+                    published_dois = history_df["DOI"].tolist()
+                    # 履歴にないDOIを持つ論文だけを残す
+                    new_articles = processed_articles[~processed_articles["DOI"].isin(published_dois)]
+                else:
+                    # ファイルはあるがDOI列がない場合は、安全のためフィルタせず全件対象（またはエラー処理）
+                    new_articles = processed_articles
+            except Exception as e:
+                self.logger.error(f"履歴ファイルの読み込みに失敗しました: {e}")
+                new_articles = processed_articles
+        else:
+            # 履歴ファイルがない場合は、全ての論文を新規とする
+            new_articles = processed_articles
+
+        # 新しい論文がなければ空リストを返す
+        if new_articles.empty:
+            self.logger.info("新しい論文は見つかりませんでした（すべて履歴済み）。")
+            return []
+
+        # 2. 新しい論文をCSVに追記保存する
+        # ファイルが存在しない場合はヘッダー(列名)を付ける、存在する場合はデータのみ追記
+        try:
+            mode = 'a' if os.path.exists(history_file_path) else 'w'
+            header = not os.path.exists(history_file_path)
+            new_articles.to_csv(history_file_path, mode=mode, index=False, header=header, encoding='utf-8-sig')
+            self.logger.info(f"{len(new_articles)} 件の新しい論文を {history_file_path} に保存しました。")
+        except Exception as e:
+            self.logger.error(f"履歴ファイルへの書き込みに失敗しました: {e}")
+
+        # 次の処理（通知など）のためにリスト形式に変換して返す
+        return new_articles.values.tolist()

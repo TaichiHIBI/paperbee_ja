@@ -2,6 +2,7 @@ from datetime import date, datetime
 from time import sleep
 from typing import List, Optional, Union
 
+import ollama
 import os
 
 import defusedxml.ElementTree as ET  # Using defusedxml for security
@@ -28,15 +29,11 @@ def translate_abstract(text: str, provider: str, model_name: str, api_key: str =
 
         elif provider == "gemini":
             from google import genai
-            
             if not api_key:
                 return text + " (Error: API Key missing)"
-            client = genai.Client(api_key=api_key)
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt
-            )
-            # Sleepは必須ではありませんが、レート制限回避のために残す場合はそのままで
+            genai.configure(api_key=api_key)
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(prompt)
             from time import sleep
             sleep(2)
             return response.text

@@ -4,6 +4,8 @@ NCBI_API_KEY: "your-ncbi-api-key"
 
 # path to the local root directory where query prompts and files are stored
 LOCAL_ROOT_DIR: "/path/to/local/root/dir"
+# path to the history file where previously found papers are stored. default is history.csv in the LOCAL_ROOT_DIR
+HISTORY_FILE: ""
 
 # Queries. You can set either only "query" to use in all databases or query_biorxiv and query_pubmed_arxiv.
 # Note that biorxiv has more requirements for the query, this is why it's separated.

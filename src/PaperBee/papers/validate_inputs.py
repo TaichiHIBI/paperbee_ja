@@ -31,8 +31,8 @@ def validate_configuration(
         e = "No query is provided. Please set either 'query' or both 'query_biorxiv' and 'query_pubmed_arxiv' in the config file."
         raise FileNotFoundError(e)
 
-    validate_config_variable(config, "GOOGLE_SPREADSHEET_ID")
-    validate_config_variable(config, "GOOGLE_CREDENTIALS_JSON")
+    #validate_config_variable(config, "GOOGLE_SPREADSHEET_ID")
+    #validate_config_variable(config, "GOOGLE_CREDENTIALS_JSON")
     validate_config_variable(config, "NCBI_API_KEY")
 
     return root_dir, query, query_biorxiv, query_pubmed_arxiv
