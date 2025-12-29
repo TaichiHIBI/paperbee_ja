@@ -24,7 +24,7 @@ PaperBeeは、新しい科学論文を自動的に検索し、お気に入りの
 ### 🚀 仕組み
 PaperBeeは、findpapers ライブラリを使用して、指定されたキーワードでPubMed、arXiv、bioRxivから科学論文を検索します。
 
-取得した論文は、コマンドラインでの手動選別、または LLMによる自動フィルタリング によって選別されます。 選別された論文は**GoogleスプレッドシートまたはローカルのCSVファイル**に記録され、Slackなどのチャンネルに通知されます。 設定はシンプルな config.yml ファイルで行います。
+取得した論文は、コマンドラインでの手動選別、または LLMによる自動フィルタリング によって選別されます。 選別された論文はGoogleスプレッドシートまたはローカルのCSVファイルに記録され、Slackなどのチャンネルに通知されます。 設定はシンプルな config.yml ファイルで行います。
 
 ### 🗂️ プロジェクト構造（主な変更点）
 * src/PaperBee/papers/utils.py – 翻訳機能 (translate_abstract) を追加。
@@ -34,6 +34,8 @@ PaperBeeは、findpapers ライブラリを使用して、指定されたキー�
 * src/PaperBee/daily_posting.py – 設定ファイルから翻訳オプションを読み込むように修正。
 
 * src/PaperBee/papers/papers_finder.py – 翻訳フローおよびローカル履歴管理機能を統合。
+
+* src/PaperBee/papers/llm_filtering.py – LLMフィルタリングにGeminiを追加。
 
 ## 📦 インストール
 ソースコードを修正しているため、以下の手順でインストールしてください：
@@ -64,16 +66,18 @@ pip install -e .
 
 2. config.ymlの `NCBI_API_KEY` に取得したAPI Keyを貼り付けてください。
 ### LLM連携：いずれかを推奨
-* LLMフィルタリング：OpenAI or Ollama
+* LLMフィルタリング：OpenAI or Ollama or Gemini
 * アブストラクト翻訳：OpenAI or Ollama or Gemini
 #### OpenAI API
 1. [このページ](https://platform.openai.com/settings/organization/api-keys)からOpenAIアカウントにログインし、API Keyを作成してください。
 
-2. config.ymlの `OEPENAI_API_KEY` に取得したAPI Keyを貼り付けてください。（LLMフィルタリング用。）
+2. config.ymlの `OEPENAI_API_KEY` に取得したAPI Keyを貼り付けてください。（LLMフィルタリング用）
 
 3. config.ymlの `TRANSLATION_API_KEY` に取得したAPI Keyを貼り付けてください。（翻訳用）
 #### Google AI API
 1. [このページ](https://ai.google.dev/aistudio?hl=ja)からGoogleアカウントにログインし、Gemini API Keyを作成してください。
+
+2. config.ymlの `GEMINI_API_KEY` に取得したAPI Keyを貼り付けてください。（LLMフィルタリング用）
 
 2. config.ymlの `TRANSLATION_API_KEY` に取得したAPI Keyを貼り付けてください。（翻訳用）
 #### Ollama 
@@ -88,7 +92,7 @@ config.yml の例（日本語要約機能・ローカル履歴管理付き）
 
 ⚠️queryの書き方やFiltering promptの形式はフォーク元を参照してください。
 
-config_yourforcus.ymlを複数作成してそれぞれ実行することで、異なる分野の論文をサーチすることができます。
+config_yourforcus.ymlを複数作成してそれぞれ実行することで、異なる分野の論文をサーチすることができます。その場合は、history.csvの名前も合わせて変更するように `HISTORY_FILE` のファイル名を設定してください。
 
 ```yaml
 # -----------------------------------------------------------------------------
@@ -108,8 +112,8 @@ HISTORY_FILE: "history.csv"
 
 NCBI_API_KEY: "your-ncbi-api-key"
 
-# ローカルルートディレクトリへのパス
-LOCAL_ROOT_DIR: "/path/to/local/root/dir"
+# filesディレクトリへのパス（config.ymlやhistory.csvの保管場所）
+LOCAL_ROOT_DIR: "../paperbee_ja/files"
 
 # 検索クエリ設定
 # bioRxivは複雑なクエリに対応していないため、単純なOR検索のみ記述します
@@ -122,9 +126,9 @@ query_pubmed_arxiv: "([single-cell transcriptomics]) AND ([AI] OR [machine learn
 # LLMフィルタリング設定 (オプション)
 # -----------------------------------------------------------------------------
 LLM_FILTERING: false
-LLM_PROVIDER: "ollama"       # "ollama" または "openai"
-LANGUAGE_MODEL: "gemma2"     # 使用するモデル名 (例: gemma2, llama3, gpt-4o-mini)
-OPENAI_API_KEY: "your-key"
+LLM_PROVIDER: "ollama"       # "ollama", "openai", "gemini" のいずれか
+LANGUAGE_MODEL: "gemma2"     # 使用するモデル名 (例: gemma2, gpt-4o-mini, gemini-1.5-flash)
+LLM_API_KEY: "your-key"      # OpenAIまたはGemini使用時のAPIキー
 
 # フィルタリング用プロンプト
 # 興味のある分野や、除外したい論文の条件を記述します。
@@ -143,8 +147,8 @@ FILTERING_PROMPT: |
 # -----------------------------------------------------------------------------
 TRANSLATION_ENABLED: false
 TRANSLATION_PROVIDER: "ollama"      # "ollama", "openai", "gemini"
-TRANSLATION_MODEL: "gemma2"         # モデル名は環境に合わせてください
-TRANSLATION_API_KEY: ""             # OpenAI/Geminiの場合のみ必要
+TRANSLATION_MODEL: "gemma2"         # 使用するモデル名 (例: gemma2, gpt-4o-mini, gemini-1.5-flash)
+TRANSLATION_API_KEY: "your-key"     # OpenAI/Geminiの場合のみ必要
 
 # 翻訳・要約用プロンプト
 TRANSLATION_PROMPT: |
@@ -160,11 +164,27 @@ SLACK:
   channel_id: "your_slack_channel_id"
   app_token: "your_slack_app_token"
 
-# その他のプラットフォーム設定...
+# その他のプラットフォーム設定...(使用非推奨。is_posting_on: false)
+# Telegram configuration
 TELEGRAM:
   is_posting_on: false
-  # ...
+  bot_token: "your-telegram-bot-token"
+  channel_id: "your-telegram-channel-id"
 
+# Zulip configuration
+ZULIP:
+  is_posting_on: false
+  prc: "path-to-your-zulip-prc"
+  stream: "your-zulip-stream"
+  topic: "your-zulip-topic"
+
+# Mattermost configuration
+MATTERMOST:
+  is_posting_on: false              # Set to true to enable Mattermost posting
+  url: "your-mattermost-url"        # e.g. mattermost.example.com (do NOT include https://)
+  token: "your-mattermost-access-token" # Your Mattermost personal access token (do NOT commit real tokens)
+  team: "your-mattermost-team-name" # The team name (not display name)
+  channel: "your-mattermost-channel-name" # The channel name (not display name)
 ```
 
 ## ▶️ Botの実行

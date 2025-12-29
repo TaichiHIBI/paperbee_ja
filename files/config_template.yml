@@ -1,38 +1,76 @@
+# -----------------------------------------------------------------------------
+# Google Sheets設定 (オプション。非推奨：別途 google cloud 連携が必要)
+# -----------------------------------------------------------------------------
+# Google Sheetsで既読管理をする場合のみ設定してください。
+# 使わない場合は空文字 "" に設定可能です。
 GOOGLE_SPREADSHEET_ID: "your-google-spreadsheet-id"
 GOOGLE_CREDENTIALS_JSON: "/path/to/your/google-credentials.json"
+
+# -----------------------------------------------------------------------------
+# ローカル履歴設定 (オプション。こちらを推奨)
+# -----------------------------------------------------------------------------
+# Google Sheetsの代わりにローカルのCSVファイルで既読管理を行います。
+# ファイルは LOCAL_ROOT_DIR 直下に保存されます。
+HISTORY_FILE: "history.csv"
+
 NCBI_API_KEY: "your-ncbi-api-key"
 
-# path to the local root directory where query prompts and files are stored
-LOCAL_ROOT_DIR: "/path/to/local/root/dir"
-# path to the history file where previously found papers are stored. default is history.csv in the LOCAL_ROOT_DIR
-HISTORY_FILE: ""
+# filesディレクトリへのパス（config.ymlやhistory.csvの保管場所）
+LOCAL_ROOT_DIR: "../paperbee_ja/files"
 
-# Queries. You can set either only "query" to use in all databases or query_biorxiv and query_pubmed_arxiv.
-# Note that biorxiv has more requirements for the query, this is why it's separated.
-# More info: https://github.com/jonatasgrosman/findpapers?tab=readme-ov-file#search-query-construction
-query: "[AI for cell trajectories] OR [machine learning for cell trajectories] OR [deep learning for cell trajectories] OR [AI for cell dynamics] OR [machine learning for cell dynamics] OR [deep learning for cell dynamics]"
-query_biorxiv: "[AI for cell trajectories] OR [machine learning for cell trajectories] OR [deep learning for cell trajectories] OR [AI for cell dynamics] OR [machine learning for cell dynamics] OR [deep learning for cell dynamics]"
-query_pubmed_arxiv: "([single-cell transcriptomics]) AND ([Cell Dynamics]) AND ([AI] OR [machine learning] OR [deep learning]) AND NOT ([proteomics])"
+# 検索クエリ設定
+# bioRxivは複雑なクエリに対応していないため、単純なOR検索のみ記述します
+query_biorxiv: "[machine learning for single-cell] OR [deep learning for single-cell] OR [AI for single-cell]"
 
-# LLM Filtering (optional)
-LLM_FILTERING: true
-LLM_PROVIDER: "openai"
-LANGUAGE_MODEL: "gpt-4o-mini"
-OPENAI_API_KEY: "your-openai-api-key"
-# Describe in the natural language what are your interests and what kind of papers are relevant to your lab.
-# Change lab focus and interests to your own. Feel free to add more details and examples, but leave the last sentence as is.
-FILTERING_PROMPT: "You are a lab manager at a research lab focusing on machine learning methods development for single-cell RNA sequencing. Lab members are interested in developing methods to model cell dynamics. You are reviewing a list of research papers to determine if they are relevant to your lab. Please answer 'yes' or 'no' to the following question: Is the following research paper relevant?"
+# PubMed/arXiv用クエリ (AND, OR, NOTが使用可能)
+query_pubmed_arxiv: "([single-cell transcriptomics]) AND ([AI] OR [machine learning] OR [deep learning])"
 
-# Slack configuration
+# -----------------------------------------------------------------------------
+# LLMフィルタリング設定 (オプション)
+# -----------------------------------------------------------------------------
+LLM_FILTERING: false
+LLM_PROVIDER: "ollama"       # "ollama", "openai", "gemini" のいずれか
+LANGUAGE_MODEL: "gemma2"     # 使用するモデル名 (例: gemma2, gpt-4o-mini, gemini-1.5-flash)
+LLM_API_KEY: "your-key"      # OpenAIまたはGemini使用時のAPIキー
+
+# フィルタリング用プロンプト
+# 興味のある分野や、除外したい論文の条件を記述します。
+FILTERING_PROMPT: |
+  You are a researcher in a computational biology lab. Your goal is to identify papers that propose **novel algorithms**.
+  Criteria for Relevance (YES):
+  - Proposes a new algorithm or method.
+  - Applicable to human data.
+  Criteria for Exclusion (NO):
+  - Purely clinical studies.
+  - Review papers.
+  Please answer 'yes' or 'no' to the following question: Is the following research paper relevant?
+
+# -----------------------------------------------------------------------------
+# 🇯🇵 日本語翻訳・要約設定 (本フォーク版の機能)
+# -----------------------------------------------------------------------------
+TRANSLATION_ENABLED: false
+TRANSLATION_PROVIDER: "ollama"      # "ollama", "openai", "gemini"
+TRANSLATION_MODEL: "gemma2"         # 使用するモデル名 (例: gemma2, gpt-4o-mini, gemini-1.5-flash)
+TRANSLATION_API_KEY: "your-key"     # OpenAI/Geminiの場合のみ必要
+
+# 翻訳・要約用プロンプト
+TRANSLATION_PROMPT: |
+  以下の科学論文のアブストラクトを、日本語で3点の箇条書きに要約してください。
+  出力は日本語の要約のみを行ってください。
+
+# -----------------------------------------------------------------------------
+# Slack設定 (日本語要約対応)
+# -----------------------------------------------------------------------------
 SLACK:
   is_posting_on: true
-  bot_token: "your-slack-bot-token"
-  channel_id: "your-slack-channel-id"
-  app_token: "your-slack-app-token"
+  bot_token: "your_slack_bot_token"
+  channel_id: "your_slack_channel_id"
+  app_token: "your_slack_app_token"
 
+# その他のプラットフォーム設定...(使用非推奨。is_posting_on: false)
 # Telegram configuration
 TELEGRAM:
-  is_posting_on: true
+  is_posting_on: false
   bot_token: "your-telegram-bot-token"
   channel_id: "your-telegram-channel-id"
 
@@ -45,14 +83,8 @@ ZULIP:
 
 # Mattermost configuration
 MATTERMOST:
-  is_posting_on: true                # Set to true to enable Mattermost posting
+  is_posting_on: false              # Set to true to enable Mattermost posting
   url: "your-mattermost-url"        # e.g. mattermost.example.com (do NOT include https://)
   token: "your-mattermost-access-token" # Your Mattermost personal access token (do NOT commit real tokens)
   team: "your-mattermost-team-name" # The team name (not display name)
   channel: "your-mattermost-channel-name" # The channel name (not display name)
-
-SLACK_TEST_CHANNEL_ID: "your-slack-test-channel-id" # not required so left outside of dictionary
-TELEGRAM_TEST_CHANNEL_ID: "your-slack-test-channel-id" # not required so left outside of dictionary
-MATTERMOST_TEST_CHANNEL_ID: "your-mattermost-test-channel-id" # not required so left outside of dictionary
-GOOGLE_TEST_SPREADSHEET_ID: "your-google-test-spreadsheet-id" # not required so left outside of dictionary
-

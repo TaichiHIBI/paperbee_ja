@@ -1,0 +1,111 @@
+{
+  "databases": [
+    "pubmed"
+  ],
+  "limit": 1200,
+  "limit_per_database": 400,
+  "number_of_papers": 2,
+  "number_of_papers_by_database": {
+    "PubMed": 2
+  },
+  "papers": [
+    {
+      "abstract": "BACKGROUND The complex metabolic and immune characteristics of ovarian cancer and their interconnections can promote tumor immune evasion, ultimately leading to immunotherapy failure. A comprehensive understanding of these relationships can inform the development of diagnostic markers and more effective therapeutics.\nMETHODS Mendelian randomization analysis identified the metabolic and immune characteristics of non-mucinous ovarian cancer. Glycosphingolipid metabolic gene signature was selected using Lasso and univariate Cox regression. Single-cell transcriptomics, proteomics, and spatial transcriptomics were applied to elucidate the expression of these genes and their association with immunological features, while cell-cell communication analysis explored potential molecular mechanisms. Prognostic models were constructed using multiple machine learning algorithms.\nRESULTS 13 metabolic and immune characteristics showed causally associations with non-mucinous ovarian cancer, including CD20\u2009+\u2009B cells and the glycosphingolipid metabolism. PPIA-BSG mediated the cell-cell communication between CD20\u2009+\u2009B cells and SUMF1\u2009+\u2009malignant cells, promoting immune evasion driven by extracellular matrix remodeling. Prognostic models based on extracellular matrix genes co-experessed with SUMF1 demonstrated good predictive accuracy and generalizability across multiple independent datasets (maximum AUC\u2009=\u20090.732).\nCONCLUSIONS In non-mucinous ovarian cancer, we identified two distinct cell subpopulations: CD20\u2009+\u2009B cells and SUMF1\u2009+\u2009malignant cells, which interact through the PPIA-BSG signaling axis. These findings may aid in identifying diagnostic markers and clinical therapeutic targets for this disease.\nSUPPLEMENTARY INFORMATION The online version contains supplementary material available at 10.1186/s13048-025-01877-y.",
+      "authors": [
+        "Hongkai Yu",
+        "Chang You",
+        "Ting Xu",
+        "Ziyan Zhao",
+        "Danyang Wang",
+        "Lu Hu",
+        "Liangzhe Dai",
+        "Wanlin Zheng",
+        "Luyao Wang",
+        "Minghui Ji",
+        "Tianchi Zhuang",
+        "Yingqi Yang"
+      ],
+      "categories": null,
+      "citations": null,
+      "comments": null,
+      "databases": [
+        "PubMed"
+      ],
+      "doi": null,
+      "keywords": [
+        "N Metabolism",
+        "N Immunity",
+        "N Non-mucinous ovarian cancer",
+        "N Multi-omics"
+      ],
+      "number_of_pages": null,
+      "pages": "299",
+      "publication": {
+        "category": "Journal",
+        "cite_score": null,
+        "is_potentially_predatory": false,
+        "isbn": null,
+        "issn": "1757-2215",
+        "publisher": null,
+        "sjr": null,
+        "snip": null,
+        "subject_areas": [],
+        "title": "Journal of ovarian research"
+      },
+      "publication_date": "2025-12-24",
+      "selected": null,
+      "title": "Multi-omics reveals the immune and metabolic characteristics and associations in non-mucinous ovarian cancer.",
+      "urls": []
+    },
+    {
+      "abstract": "BACKGROUND Spinal cord injury (SCI) causes permanent neurological deficits and is associated with complex pathological processes such as angiogenesis and programmed cell death (PCD). However, the crosstalk between angiogenesis and PCD in SCI remains unclear.\nMETHODS We integrated angiogenesis-related and PCD-related datasets to identify angiogenesis- and PCD-associated differentially expressed genes (ARPRDEGs). Weighted gene coexpression network analysis (WGCNA), protein\u2013protein interaction (PPI), and machine learning were used to screen hub genes, followed by time-course qRT-PCR and Western blot validation in a transection mouse model. We also performed immune infiltration analysis, drug\u2013gene interaction prediction, Mendelian randomization (MR) analysis using GWAS and eQTL data from SCI patients, and single-cell transcriptomics with CellChat communication analysis.\nRESULTS A total of 134 ARPRDEGs were identified and enriched in cell adhesion, leukocyte migration, and wound healing. Three hub genes (Cd44, Icam1, and Tnf) were identified and validated by qRT-PCR and Western blot. Time-course analysis revealed Cd44 was consistently upregulated, Icam1 showed early elevation followed by decline, while Tnf exhibited stage-dependent downregulation, highlighting the impact of injury stage. MR analysis provided genetic evidence supporting potential causal associations: genetically predicted Cd44 and Icam1 expression were suggested as risk factors, while Tnf showed a potential protective effect. A diagnostic model based on these hub genes demonstrated good predictive performance across species. Single-cell transcriptomics further revealed that VISFATIN signaling mediated endothelial\u2013myeloid communication in the high-expression hub-gene group, reinforcing their biological plausibility. In addition, acetaminophen was predicted as a potential candidate through computational drug screening, with exploratory in vivo findings suggesting Cd44-related effects; its therapeutic role requires further pharmacological validation.\nCONCLUSION This study systematically revealed the role of angiogenesis-PCD interplay in SCI and identified Cd44, Icam1, and Tnf as promising candidate diagnostic and therapeutic targets, whose clinical translation requires further validation. By integrating transcriptomic, protein-level, single-cell, clinical, and genetic evidence, our findings provide novel insights into stage-specific mechanisms and potential therapeutic directions, while highlighting the need for further pharmacological validation for SCI.\nSUPPLEMENTARY INFORMATION The online version contains supplementary material available at 10.1186/s12967-025-07405-2.",
+      "authors": [
+        "Feng Lu",
+        "Zifeng Mai",
+        "Longfei Zhang",
+        "Junkai He",
+        "Lifeng Wang",
+        "Shihong Li",
+        "Maolin Zhong"
+      ],
+      "categories": null,
+      "citations": null,
+      "comments": null,
+      "databases": [
+        "PubMed"
+      ],
+      "doi": null,
+      "keywords": [
+        "N Mendelian randomization",
+        "N Programmed cell death",
+        "N Molecular Docking",
+        "N Angiogenesis",
+        "N Single-cell sequencing",
+        "N Spinal cord injury (SCI)"
+      ],
+      "number_of_pages": null,
+      "pages": "1417",
+      "publication": {
+        "category": "Journal",
+        "cite_score": null,
+        "is_potentially_predatory": false,
+        "isbn": null,
+        "issn": "1479-5876",
+        "publisher": null,
+        "sjr": null,
+        "snip": null,
+        "subject_areas": [],
+        "title": "Journal of translational medicine"
+      },
+      "publication_date": "2025-12-24",
+      "selected": null,
+      "title": "Integration of angiogenesis and programmed cell death mechanisms unveils potential diagnostic and therapeutic targets in spinal cord injury.",
+      "urls": []
+    }
+  ],
+  "processed_at": "2025-12-29 04:21:01",
+  "publication_types": null,
+  "query": "([single-cell transcriptomics]) AND ([AI] OR [machine learning] OR [deep learning])",
+  "since": "2025-12-22",
+  "until": "2025-12-29"
+}

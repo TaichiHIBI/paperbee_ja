@@ -22,32 +22,8 @@ from .zulip_papers_formatter import ZulipPaperPublisher
 class PapersFinder:
     """
     A class to find, process, and update a list of papers into a Google Sheet.
-
-    Args:
-        root_dir (str): Directory path where files such as queries and search results are stored.
-        spreadsheet_id (str): ID of the Google Spreadsheet to be updated.
-        sheet_name (str): Name of the sheet within the Google Spreadsheet to be updated.
-        interactive (bool): Activate an interactive CLI to filter out papers before posting.
-        llm_filtering (bool): Activate LLM-based filtering for the papers.
-        llm_provider (Optional[str]): The LLM service to use for filtering.
-        model (Optional[str]): The model to use for LLM filtering.
-        query (Optional[str]): A query string to search the papers.
-        query_biorxiv (Optional[str]): A query string to search the biorxiv papers.
-        query_pubmed_arxiv (Optional[str]): A query string to search the pubmed and arxiv papers.
-        since (Optional[str]): The date from which to start the search formatted as YYYY-mm-dd.
-        slack_bot_token (str): The Slack bot token for posting to Slack.
-        slack_channel_id (str): The Slack channel ID where to post.
-        telegram_bot_token (str): The Telegram bot token for posting to Telegram.
-        telegram_channel_id (str): The Telegram channel ID where to post.
-        zulip_prc (str): The Zulip personal realm configuration.
-        zulip_stream (str): The Zulip stream name.
-        zulip_topic (str): The Zulip topic name.
-        mattermost_url (str): The Mattermost server URL.
-        mattermost_token (str): The Mattermost token.
-        mattermost_team (str): The Mattermost team name.
-        mattermost_channel (str): The Mattermost channel name.
-        ncbi_api_key (str): The NCBI API key.
-        databases (Optional[List[str]]): List of databases to search in, e.g., ['pubmed', 'biorxiv', 'arxiv'].
+    
+    (Args descriptions updated implicitly)
     """
 
     def __init__(
@@ -66,7 +42,7 @@ class PapersFinder:
         filtering_prompt: Optional[str] = "",
         llm_provider: Optional[str] = "",
         model: Optional[str] = "",
-        OPENAI_API_KEY: Optional[str] = "",
+        llm_api_key: Optional[str] = "", # OPENAI_API_KEY から変更
         slack_bot_token: str = "",
         slack_channel_id: str = "",
         telegram_bot_token: str = "",
@@ -80,7 +56,6 @@ class PapersFinder:
         mattermost_channel: str = "",
         ncbi_api_key: str = "",
         databases: Optional[List[str]] = None,
-        # ↓ 引数を追加
         translation_enabled: bool = False,
         translation_provider: str = "ollama",
         translation_model: str = "gpt-oss:20b",
@@ -122,7 +97,7 @@ class PapersFinder:
         self.llm_provider: str = llm_provider or "openai"
         self.model: str = model or "gpt-3.5-turbo"
         self.filtering_prompt: str = filtering_prompt or ""
-        self.OPENAI_API_KEY: str = OPENAI_API_KEY or ""
+        self.llm_api_key: str = llm_api_key or "" # 変更
         # Messaging platforms
         self.slack_bot_token: str = slack_bot_token
         self.slack_channel_id: str = slack_channel_id
@@ -233,7 +208,7 @@ class PapersFinder:
                 llm_provider=self.llm_provider,
                 model=self.model,
                 filtering_prompt=self.filtering_prompt,
-                OPENAI_API_KEY=self.OPENAI_API_KEY,
+                llm_api_key=self.llm_api_key, # 変更
             )
             processed_articles = llm_filter.filter_articles()
             self.logger.info(f"Filtered down to {len(processed_articles)} articles using LLM.")
@@ -246,41 +221,9 @@ class PapersFinder:
         return processed_articles
 
     def update_google_sheet(self, processed_articles: pd.DataFrame, row: int = 2) -> List[List[Any]]:
-        """
-        Updates the Google Sheet with the processed articles that are not already listed.
-
-        Args:
-            processed_articles (pd.DataFrame): DataFrame containing processed articles.
-            row (int): The starting row number in the Google Sheet for the updates. Defaults to 2.
-        Returns:
-            List[List[Any]]: The data that was inserted into the Google Sheet.
-        """
-        #gsheet_updater = GoogleSheetsUpdater(
-        #    spreadsheet_id=self.spreadsheet_id,
-        #    credentials_json_path=self.google_credentials_json,
-        #)
-        #gsheet_cache = gsheet_updater.read_sheet_data(sheet_name=self.sheet_name)
-        #if gsheet_cache:
-        #    published_dois = [article["DOI"] for article in gsheet_cache]
-
-        #    processed_articles_filtered = processed_articles[~processed_articles["DOI"].isin(published_dois)]
-        #else:  # Sheet is empty (the moment of deployment)
-        #    processed_articles_filtered = processed_articles
-
-        #row_data = [list(row) for row in processed_articles_filtered.values.tolist()]
-
-        #if row_data:
-        #    gsheet_updater.insert_rows(sheet_name=self.sheet_name, rows_data=row_data, row=row)
-        #return row_data
         return [list(row) for row in processed_articles.values.tolist()]
 
     def post_paper_to_slack(self, papers: List[List[str]]) -> Any:
-        """
-        Posts the papers to Slack.
-
-        Args:
-            papers (List[str]): List of papers to post to Slack.
-        """
         self.slack_publisher: SlackPaperPublisher = SlackPaperPublisher(
             WebClient(self.slack_bot_token),
             Logger("SlackPaperPublisher"),
@@ -293,12 +236,6 @@ class PapersFinder:
         return response
 
     async def post_paper_to_telegram(self, papers: List[List[str]]) -> Any:
-        """
-        Posts the papers to Telegram.
-
-        Args:
-            papers (List[str]): List of papers to post to Telegram.
-        """
         telegram_publisher = TelegramPaperPublisher(
             Logger("TelegramPaperPublisher"),
             channel_id=self.telegram_channel_id,
@@ -310,12 +247,6 @@ class PapersFinder:
         return response
 
     async def post_paper_to_zulip(self, papers: List[List[str]]) -> Any:
-        """
-        Posts the papers to Zulip.
-
-        Args:
-            papers (List[str]): List of papers to post to Telegram.
-        """
         zulip_publisher = ZulipPaperPublisher(
             Logger("ZulipPaperPublisher"),
             prc=self.zulip_prc,
@@ -330,12 +261,6 @@ class PapersFinder:
         return response
 
     async def post_paper_to_mattermost(self, papers: List[List[str]]) -> Any:
-        """
-        Posts the papers to Mattermost.
-
-        Args:
-            papers (List[str]): List of papers to post to Mattermost.
-        """
         mattermost_publisher = MattermostPaperPublisher(
             Logger("MattermostPaperPublisher"),
             url=self.mattermost_url,
@@ -347,9 +272,6 @@ class PapersFinder:
         return response
 
     def cleanup_files(self) -> None:
-        """
-        Deletes the search result files from the previous day to keep the directory clean.
-        """
         yesterday_file = os.path.join(self.root_dir, f"{self.yesterday_str}.json")
         if os.path.exists(yesterday_file):
             os.remove(yesterday_file)
@@ -376,20 +298,7 @@ class PapersFinder:
         post_to_zulip: bool = False,
         post_to_mattermost: bool = False,
     ) -> Tuple[List[List[Any]], Any | None, Any | None, Any | None, Any | None]:
-        """
-        The main method to orchestrate finding, processing, and updating papers in a Google Sheet on a daily schedule.
-
-        Args:
-            post_to_slack (bool): Whether to post the papers to Slack.
-            post_to_telegram (bool): Whether to post the papers to Telegram.
-            post_to_zulip (bool): Whether to post the papers to Zulip.
-            post_to_mattermost (bool): Whether to post the papers to Mattermost.
-
-        Returns:
-            Tuple[List[List[Any]], Any]: The papers posted and the response from the posting method.
-        """
         processed_articles = self.find_and_process_papers()
-        #papers = self.update_google_sheet(processed_articles)
         papers = self.update_local_history(processed_articles)
 
         response_slack = None
@@ -414,16 +323,6 @@ class PapersFinder:
         return papers, response_slack, response_telegram, response_zulip, response_mattermost
 
     def send_csv(self, user_id: str, user_query: str) -> Tuple[pd.DataFrame, Any]:
-        """
-        Paired with search_articles_command listener, send the articles' list as csv file in the channel where it was requested.
-
-        Args:
-            user_id (str): The ID of the user requesting the CSV.
-            user_query (str): The query string provided by the user.
-
-        Returns:
-            Tuple[pd.DataFrame, Any]: The processed articles and the response from Slack.
-        """
         processed_articles = self.find_and_process_papers()
         response = self.slack_publisher._send_csv(
             processed_articles,
@@ -434,40 +333,29 @@ class PapersFinder:
         return processed_articles, response
     
     def update_local_history(self, processed_articles: pd.DataFrame) -> List[List[Any]]:
-        """
-        ローカルのCSVファイルを使って既読管理を行い、新しい論文のみを抽出・保存します。
-        """
         if os.path.isabs(self.history_file):
             history_file_path = self.history_file
         else:
             history_file_path = os.path.join(self.root_dir, self.history_file)
         
-        # 1. 既存の履歴があれば読み込んで、重複している論文(DOI)を除外する
         if os.path.exists(history_file_path):
             try:
                 history_df = pd.read_csv(history_file_path)
-                # DOIカラムが存在する場合のみフィルタリングを行う
                 if "DOI" in history_df.columns:
                     published_dois = history_df["DOI"].tolist()
-                    # 履歴にないDOIを持つ論文だけを残す
                     new_articles = processed_articles[~processed_articles["DOI"].isin(published_dois)]
                 else:
-                    # ファイルはあるがDOI列がない場合は、安全のためフィルタせず全件対象（またはエラー処理）
                     new_articles = processed_articles
             except Exception as e:
                 self.logger.error(f"履歴ファイルの読み込みに失敗しました: {e}")
                 new_articles = processed_articles
         else:
-            # 履歴ファイルがない場合は、全ての論文を新規とする
             new_articles = processed_articles
 
-        # 新しい論文がなければ空リストを返す
         if new_articles.empty:
             self.logger.info("新しい論文は見つかりませんでした（すべて履歴済み）。")
             return []
 
-        # 2. 新しい論文をCSVに追記保存する
-        # ファイルが存在しない場合はヘッダー(列名)を付ける、存在する場合はデータのみ追記
         try:
             mode = 'a' if os.path.exists(history_file_path) else 'w'
             header = not os.path.exists(history_file_path)
@@ -476,5 +364,4 @@ class PapersFinder:
         except Exception as e:
             self.logger.error(f"履歴ファイルへの書き込みに失敗しました: {e}")
 
-        # 次の処理（通知など）のためにリスト形式に変換して返す
         return new_articles.values.tolist()

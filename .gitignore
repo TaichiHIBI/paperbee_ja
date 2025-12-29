@@ -1,6 +1,8 @@
 # Project-specific
 # To not commit the config file with secrets
 files/config.yml
+files/history.csv
+
 
 # General things to ignore
 build/

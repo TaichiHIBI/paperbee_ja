@@ -9,6 +9,12 @@ import defusedxml.ElementTree as ET  # Using defusedxml for security
 import pandas as pd
 import requests
 
+# google-genai import check
+try:
+    from google import genai
+except ImportError:
+    genai = None
+
 def translate_abstract(text: str, provider: str, model_name: str, api_key: str = "", prompt_template: str = "") -> str:
     if not text or not isinstance(text, str):
         return ""
@@ -28,14 +34,19 @@ def translate_abstract(text: str, provider: str, model_name: str, api_key: str =
             return response['message']['content']
 
         elif provider == "gemini":
-            from google import genai
+            if genai is None:
+                return text + " (Error: google-genai not installed)"
             if not api_key:
                 return text + " (Error: API Key missing)"
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content(prompt)
+            
+            # v1.0 SDK usage
+            client = genai.Client(api_key=api_key)
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt
+            )
             from time import sleep
-            sleep(2)
+            sleep(1) # Rate limit handling
             return response.text
             
         elif provider == "openai":
@@ -63,18 +74,9 @@ def translate_abstract(text: str, provider: str, model_name: str, api_key: str =
 
 
 class ArticlesProcessor:
-    """
-    Processes a list of articles, including filtering columns, extracting DOIs,
-    setting dates, determining preprint status, and more.
-
-    Args:
-        articles (pd.DataFrame): DataFrame containing articles information.
-        today_str (str): The current date as a string.
-
-    Methods:
-        process_articles(): Process and reshape the input dataframe for the google sheet update.
-    """
-
+    # ... (既存のクラス定義は変更なし) ...
+    # __init__ や process_articles などはそのまま維持してください
+    
     def __init__(
         self, 
         articles: List[dict], 
@@ -146,7 +148,7 @@ class ArticlesProcessor:
             self.articles["Keywords"] = self.articles["keywords"].apply(lambda kws: ", ".join(kw[2:] for kw in kws))
             self.articles["URL"] = self.articles["url"]
             # --- 修正 ---
-            # gemini_translation が True の場合のみ実行
+            # translation_enabled が True の場合のみ実行
             if self.translation_enabled:
                 print(f"Translating abstracts with {self.translation_provider} ({self.translation_model})...")
                 if "abstract" in self.articles.columns:

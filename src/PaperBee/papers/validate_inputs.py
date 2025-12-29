@@ -58,20 +58,22 @@ def validate_llm_args(config: dict, root_dir: str) -> Tuple[str, str, str, str]:
     validate_config_variable(config, "LLM_PROVIDER")
     validate_config_variable(config, "LANGUAGE_MODEL")
 
-    LLM_PROVIDER: str = str(config.get("LLM_PROVIDER", ""))
-    OPENAI_API_KEY: str = ""
-    if LLM_PROVIDER == "openai":
-        validate_config_variable(config, "OPENAI_API_KEY")
-        OPENAI_API_KEY = str(config.get("OPENAI_API_KEY", ""))
+    LLM_PROVIDER: str = str(config.get("LLM_PROVIDER", "")).lower()
+    llm_api_key: str = ""
+    
+    # プロバイダーがAPIキーを必要とする場合、共通の変数 'LLM_API_KEY' を確認する
+    if LLM_PROVIDER in ["openai", "gemini"]:
+        validate_config_variable(config, "LLM_API_KEY")
+        llm_api_key = str(config.get("LLM_API_KEY", ""))
 
-    if LLM_PROVIDER not in ["openai", "ollama"]:
-        e = f"{LLM_PROVIDER} is an invalid LLM provider {LLM_PROVIDER}. Please select one of ('openai', 'ollama')."
+    if LLM_PROVIDER not in ["openai", "ollama", "gemini"]:
+        e = f"{LLM_PROVIDER} is an invalid LLM provider {LLM_PROVIDER}. Please select one of ('openai', 'ollama', 'gemini')."
         raise ValueError(e)
     LANGUAGE_MODEL: str = str(config.get("LANGUAGE_MODEL", ""))
 
     filtering_prompt: str = str(config.get("FILTERING_PROMPT", ""))
 
-    return filtering_prompt, LLM_PROVIDER, LANGUAGE_MODEL, OPENAI_API_KEY
+    return filtering_prompt, LLM_PROVIDER, LANGUAGE_MODEL, llm_api_key
 
 
 def validate_config_variable(config: dict, var_name: str) -> None:

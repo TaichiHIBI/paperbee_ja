@@ -52,26 +52,26 @@ async def daily_papers_search(
 
     llm_filtering = config.get("LLM_FILTERING", False)
     if llm_filtering:
-        filtering_prompt, LLM_PROVIDER, LANGUAGE_MODEL, OPENAI_API_KEY = validate_llm_args(config, root_dir)
+        # OPENAI_API_KEY -> llm_api_key に変更
+        filtering_prompt, LLM_PROVIDER, LANGUAGE_MODEL, llm_api_key = validate_llm_args(config, root_dir)
     else:
         filtering_prompt = ""
         LLM_PROVIDER = ""
         LANGUAGE_MODEL = ""
-        OPENAI_API_KEY = ""
+        llm_api_key = ""
 
     translation_enabled = config.get("TRANSLATION_ENABLED", False)
     translation_provider = str(config.get("TRANSLATION_PROVIDER", "ollama")).lower()
     translation_model = str(config.get("TRANSLATION_MODEL", "gemma2"))
     translation_api_key = str(config.get("TRANSLATION_API_KEY", ""))
 
-    # ↓ 追加: プロンプトの取得 (デフォルトは全文翻訳)
     default_prompt = "Translate the following scientific abstract into natural Japanese. Output ONLY the Japanese translation:\n\n{text}"
     translation_prompt = str(config.get("TRANSLATION_PROMPT", default_prompt))
     history_file = str(config.get("HISTORY_FILE", "history.csv"))
     
     finder = PapersFinder(
         root_dir=root_dir,
-        history_file = str(config.get("HISTORY_FILE", "history.csv")),
+        history_file = history_file,
         spreadsheet_id=config.get("GOOGLE_SPREADSHEET_ID", ""),
         google_credentials_json=config.get("GOOGLE_CREDENTIALS_JSON", ""),
         sheet_name="Papers",
@@ -84,7 +84,7 @@ async def daily_papers_search(
         filtering_prompt=filtering_prompt,
         llm_provider=LLM_PROVIDER,
         model=LANGUAGE_MODEL,
-        OPENAI_API_KEY=OPENAI_API_KEY,
+        llm_api_key=llm_api_key, # Renamed
         slack_bot_token=slack_args["bot_token"],
         slack_channel_id=slack_args["channel_id"],
         telegram_bot_token=telegram_args["bot_token"],
