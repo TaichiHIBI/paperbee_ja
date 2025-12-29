@@ -49,7 +49,7 @@ pip install -e .
 ## 📝 セットアップガイド
 
 ### Slack通知設定：必須
-1. Slack App を作成します（「From an app manifest」を選択してください）。
+1. [Slack App を作成](https://api.slack.com/apps/new)します（「From an app manifest」を選択してください）。
 2. ワークスペースを選択します。
 3. manifest.json の内容をコピーし、manifestの入力ボックスに貼り付けます。
 4. 内容を確認し、アプリを作成（Create）します。
