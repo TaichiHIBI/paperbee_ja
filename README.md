@@ -60,24 +60,24 @@ pip install -e .
 9. config.yml ファイルの `SLACK_CHANNEL_ID` に、投稿先のチャンネル ID を設定します。
 10. config.yml ファイル内のその他の SLACK 関連の変数（`app_token` など）も更新します。
 ### NCBI API Key 取得：必須
-1. [このページ]("https://www.ncbi.nlm.nih.gov/datasets/docs/v2/api/api-keys/")からNCBIアカウントにログインし、API keyを作成してください。
+1. [このページ](https://www.ncbi.nlm.nih.gov/datasets/docs/v2/api/api-keys/)からNCBIアカウントにログインし、API keyを作成してください。
 
 2. config.ymlの `NCBI_API_KEY` に取得したAPI Keyを貼り付けてください。
 ### LLM連携：いずれかを推奨
 * LLMフィルタリング：OpenAI or Ollama
 * アブストラクト翻訳：OpenAI or Ollama or Gemini
 #### OpenAI API
-1. [このページ]("https://platform.openai.com/settings/organization/api-keys")からOpenAIアカウントにログインし、API Keyを作成してください。
+1. [このページ](https://platform.openai.com/settings/organization/api-keys)からOpenAIアカウントにログインし、API Keyを作成してください。
 
 2. config.ymlの `OEPENAI_API_KEY` に取得したAPI Keyを貼り付けてください。（LLMフィルタリング用。）
 
 3. config.ymlの `TRANSLATION_API_KEY` に取得したAPI Keyを貼り付けてください。（翻訳用）
 #### Google AI API
-1. [このページ]("https://ai.google.dev/aistudio?hl=ja")からGoogleアカウントにログインし、Gemini API Keyを作成してください。
+1. [このページ](https://ai.google.dev/aistudio?hl=ja)からGoogleアカウントにログインし、Gemini API Keyを作成してください。
 
 2. config.ymlの `TRANSLATION_API_KEY` に取得したAPI Keyを貼り付けてください。（翻訳用）
 #### Ollama 
-1. [このページ]("https://github.com/ollama/ollama")からOllamaをダウンロードし、お好みのローカルLLMモデルをダウンロードしてください。選択したLLMモデル名は `LANGUAGE_MODEL` `TRANSLATIONAL_MODEL` に使用します。
+1. [このページ](https://github.com/ollama/ollama)からOllamaをダウンロードし、お好みのローカルLLMモデルをダウンロードしてください。選択したLLMモデル名は `LANGUAGE_MODEL` `TRANSLATIONAL_MODEL` に使用します。
 
 
 ## ⚙️ 設定ファイル (Configuration)
