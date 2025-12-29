@@ -30,7 +30,7 @@ query_pubmed_arxiv: "([single-cell transcriptomics]) AND ([AI] OR [machine learn
 # -----------------------------------------------------------------------------
 LLM_FILTERING: false
 LLM_PROVIDER: "ollama"       # "ollama", "openai", "gemini" のいずれか
-LANGUAGE_MODEL: "gemma2"     # 使用するモデル名 (例: gemma2, gpt-4o-mini, gemini-1.5-flash)
+LANGUAGE_MODEL: "gemma2"     # 使用するモデル名 (例: gemma2, gpt-4o-mini, gemini-2.5-flash)
 LLM_API_KEY: "your-key"      # OpenAIまたはGemini使用時のAPIキー
 
 # フィルタリング用プロンプト
@@ -50,7 +50,7 @@ FILTERING_PROMPT: |
 # -----------------------------------------------------------------------------
 TRANSLATION_ENABLED: false
 TRANSLATION_PROVIDER: "ollama"      # "ollama", "openai", "gemini"
-TRANSLATION_MODEL: "gemma2"         # 使用するモデル名 (例: gemma2, gpt-4o-mini, gemini-1.5-flash)
+TRANSLATION_MODEL: "gemma2"         # 使用するモデル名 (例: gemma2, gpt-4o-mini, gemini-2.5-flash)
 TRANSLATION_API_KEY: "your-key"     # OpenAI/Geminiの場合のみ必要
 
 # 翻訳・要約用プロンプト
