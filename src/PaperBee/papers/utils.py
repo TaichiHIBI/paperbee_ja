@@ -168,7 +168,7 @@ class ArticlesProcessor:
 
     def select_last_columns(self) -> None:
         """Selects and rearranges the final set of columns for the DataFrame."""
-        expected_columns = ["DOI", "Date", "PostedDate", "IsPreprint", "Title", "Keywords", "Preprint", "Abstract_JP",  "URL"]
+        expected_columns = ["DOI", "Date", "PostedDate", "IsPreprint", "Title", "Keywords", "Preprint", "Abstract_JP",  "URL", "abstract"]
         if self.articles.empty:
             self.articles["Preprint"] = []
             # Create empty DataFrame with expected columns
