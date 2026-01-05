@@ -129,6 +129,7 @@ class PapersFinder:
             pd.DataFrame: A DataFrame containing processed articles.
         """
 
+        print("Searching papers...")
         articles: List[Dict[str, Any]] = []
 
         if self.query:
@@ -193,7 +194,7 @@ class PapersFinder:
         processor = ArticlesProcessor(
             articles, 
             self.today_str, 
-            translation_enabled=self.translation_enabled,
+            translation_enabled=False,
             translation_provider=self.translation_provider,
             translation_model=self.translation_model,
             translation_api_key=self.translation_api_key,
@@ -203,6 +204,7 @@ class PapersFinder:
         self.logger.info(f"Found {len(processed_articles)} articles.")
 
         if self.llm_filtering:
+            print("Filtering papers with LLM...")
             llm_filter = LLMFilter(
                 processed_articles,
                 llm_provider=self.llm_provider,
@@ -214,9 +216,29 @@ class PapersFinder:
             self.logger.info(f"Filtered down to {len(processed_articles)} articles using LLM.")
 
         if self.interactive_filtering:
+            print("Filtering papers manually...")
             cli = InteractiveCLIFilter(processed_articles)
             processed_articles = cli.filter_articles()
             self.logger.info(f"Filtered down to {len(processed_articles)} articles manually.")
+
+        if self.translation_enabled and not processed_articles.empty:
+            self.logger.info(f"Translating abstracts for {len(processed_articles)} papers...")
+            print("Translating abstracts...")
+            from .utils import translate_abstract # 必要な関数をインポート
+            
+            # DataFrameの各行に対して翻訳を実行
+            processed_articles["Abstract_JP"] = processed_articles["abstract"].apply(
+                lambda x: translate_abstract(
+                    x, 
+                    self.translation_provider, 
+                    self.translation_model, 
+                    self.translation_api_key,
+                    self.translation_prompt
+                )
+            )
+        
+        if "abstract" in processed_articles.columns:
+            processed_articles = processed_articles.drop(columns=["abstract"])
 
         return processed_articles
 
@@ -307,15 +329,19 @@ class PapersFinder:
         response_mattermost = None
 
         if post_to_slack:
+            print("Posting to Slack...")
             response_slack = self.post_paper_to_slack(papers)
 
         if post_to_telegram:
+            print("Posting to Telegram...")
             response_telegram = await self.post_paper_to_telegram(papers)
 
         if post_to_zulip:
+            print("Posting to Zulip...")
             response_zulip = await self.post_paper_to_zulip(papers)
 
         if post_to_mattermost:
+            print("Posting to Mattermost...")
             response_mattermost = await self.post_paper_to_mattermost(papers)
 
         self.cleanup_files()
