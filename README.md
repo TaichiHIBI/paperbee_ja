@@ -44,8 +44,8 @@ PaperBeeは、findpapers ライブラリを使用して、指定されたキー�
 git clone https://github.com/TaichiHIBI/paperbee_ja.git
 cd paperbee_ja
 
-# 必要なら仮想環境有効化
-pip install -e .
+# 必要なら仮想環境有効化 python=3.12を推奨
+pip install .
 ```
 
 ## 📝 セットアップガイド
