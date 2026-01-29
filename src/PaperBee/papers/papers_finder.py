@@ -61,6 +61,11 @@ class PapersFinder:
         translation_model: str = "gpt-oss:20b",
         translation_api_key: str = "",
         translation_prompt: str = "",
+        summarization_enabled: bool = False,
+        summarization_provider: str = "ollama",
+        summarization_model: str = "gemma2",
+        summarization_api_key: str = "",
+        summarization_prompt: str = "",
     ) -> None:
         self.root_dir: str = root_dir
         self.history_file: str = history_file
@@ -120,6 +125,12 @@ class PapersFinder:
         self.translation_model = translation_model
         self.translation_api_key = translation_api_key
         self.translation_prompt = translation_prompt
+        # SUMMARIZATION API
+        self.summarization_enabled = summarization_enabled
+        self.summarization_provider = summarization_provider
+        self.summarization_model = summarization_model
+        self.summarization_api_key = summarization_api_key
+        self.summarization_prompt = summarization_prompt
 
     def find_and_process_papers(self) -> pd.DataFrame:
         """
@@ -198,7 +209,12 @@ class PapersFinder:
             translation_provider=self.translation_provider,
             translation_model=self.translation_model,
             translation_api_key=self.translation_api_key,
-            translation_prompt=self.translation_prompt
+            translation_prompt=self.translation_prompt,
+            summarization_enabled=self.summarization_enabled,
+            summarization_provider=self.summarization_provider,
+            summarization_model=self.summarization_model,
+            summarization_api_key=self.summarization_api_key,
+            summarization_prompt=self.summarization_prompt
         )
         processed_articles = processor.articles
         self.logger.info(f"Found {len(processed_articles)} articles.")

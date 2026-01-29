@@ -67,6 +67,13 @@ async def daily_papers_search(
 
     default_prompt = "Translate the following scientific abstract into natural Japanese. Output ONLY the Japanese translation:\n\n{text}"
     translation_prompt = str(config.get("TRANSLATION_PROMPT", default_prompt))
+
+    summarization_enabled = config.get("SUMMARIZATION_ENABLED", False)
+    summarization_provider = str(config.get("SUMMARIZATION_PROVIDER", "ollama")).lower()
+    summarization_model = str(config.get("SUMMARIZATION_MODEL", "gemma2"))
+    summarization_api_key = str(config.get("SUMMARIZATION_API_KEY", "")) # 必要なら
+    summarization_prompt = str(config.get("SUMMARIZATION_PROMPT", "以下のテキストを日本語で3点の箇条書きに要約してください。:\n\n{text}"))
+
     history_file = str(config.get("HISTORY_FILE", "history.csv"))
     
     finder = PapersFinder(
@@ -102,7 +109,11 @@ async def daily_papers_search(
         translation_model=translation_model,
         translation_api_key=translation_api_key,
         translation_prompt=translation_prompt,
-        
+        summarization_enabled=summarization_enabled,
+        summarization_provider=summarization_provider,
+        summarization_model=summarization_model,
+        summarization_api_key=summarization_api_key,
+        summarization_prompt=summarization_prompt,
     )
     papers, response_slack, response_telegram, response_zulip, response_mattermost = await finder.run_daily(
         post_to_slack=slack_args["is_posting_on"],
