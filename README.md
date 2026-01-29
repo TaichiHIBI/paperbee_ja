@@ -137,7 +137,7 @@ LANGUAGE_MODEL: "gpt-oss:20b"     # フィルタリングに使用するモデ�
 LLM_API_KEY: ""                   # API使用時のみ
 
 FILTERING_PROMPT: |
-  You are a researcher. Is the following research paper relevant to ...? (yes/no)
+  "You are a lab manager at a research lab focusing on machine learning methods development for single-cell RNA sequencing. Lab members are interested in developing methods to model cell dynamics. You are reviewing a list of research papers to determine if they are relevant to your lab. Please answer 'yes' or 'no' to the following question: Is the following research paper relevant?"
 
 # -----------------------------------------------------------------------------
 # 🇯🇵 日本語要約・翻訳パイプライン設定
