@@ -18,6 +18,13 @@ PaperBeeは、新しい科学論文を自動的に検索し、お気に入りの
 ## ✨ このバージョンでの変更点：日本語要訳・翻訳機能
 本フォーク版では、LLM（Ollama, OpenAI, Gemini）を使用して、論文のアブストラクトを自動的に日本語に翻訳・要約する機能を追加しています。
 
+### 2026/01/29 更新情報
+本バージョンでは「要約」と「翻訳」のプロセスを分離しました。これにより、以下の柔軟な運用が可能です。
+
+1. **要約 + 翻訳（推奨）**: 英語で要約を作成し、それを日本語に翻訳（PLaMo-2等の翻訳特化モデルの性能を活かせます）。
+2. **要約のみ**: 英語のまま、短くまとまった要約を出力。
+3. **翻訳のみ**: 要約せず、アブストラクト全文を日本語化。
+
 ### ⚠️ 重要なお知らせ
 日本語でのアブストラクト要約・翻訳出力は、現在「Slack (🟣)」のみに対応しています。 他のプラットフォーム（Telegram, Zulip, Mattermost）では、通常の英語タイトルとリンクのみが表示されます。
 
@@ -81,8 +88,15 @@ pip install .
 
 2. config.ymlの `TRANSLATION_API_KEY` に取得したAPI Keyを貼り付けてください。（翻訳用）
 #### Ollama 
-1. [このページ](https://github.com/ollama/ollama)からOllamaをダウンロードし、お好みのローカルLLMモデルをダウンロードしてください。選択したLLMモデル名は `LANGUAGE_MODEL` `TRANSLATIONAL_MODEL` に使用します。
+* [このページ](https://github.com/ollama/ollama)からOllamaをダウンロードし、お使いのデバイスに合ったローカルLLMモデルをダウンロードしてください。選択したLLMモデル名は `LANGUAGE_MODEL` `TRANSLATIONAL_MODEL` に使用します。
+  ```bash
+  # インストール例
+  # 翻訳用モデル（PLaMo-2 翻訳特化版）
+  ollama pull mitmul/plamo-2-translate:Q8_0
 
+  # 要約・フィルタリング用モデル（gpt-oss:20b）
+  ollama pull gpt-oss:20b
+  ```
 
 ## ⚙️ 設定ファイル (Configuration)
 
@@ -96,67 +110,67 @@ config_yourforcus.ymlを複数作成してそれぞれ実行することで、�
 
 ```yaml
 # -----------------------------------------------------------------------------
-# Google Sheets設定 (オプション。非推奨：別途 google cloud 連携が必要)
+# Google Sheets / ローカル履歴設定
 # -----------------------------------------------------------------------------
-# Google Sheetsで既読管理をする場合のみ設定してください。
-# 使わない場合は空文字 "" に設定可能です。
-GOOGLE_SPREADSHEET_ID: "your-google-spreadsheet-id"
-GOOGLE_CREDENTIALS_JSON: "/path/to/your/google-credentials.json"
+# Google Sheets ID (使用しない場合は空文字)
+GOOGLE_SPREADSHEET_ID: ""
+GOOGLE_CREDENTIALS_JSON: ""
 
-# -----------------------------------------------------------------------------
-# ローカル履歴設定 (オプション。こちらを推奨)
-# -----------------------------------------------------------------------------
-# Google Sheetsの代わりにローカルのCSVファイルで既読管理を行います。
-# ファイルは LOCAL_ROOT_DIR 直下に保存されます。
+# ローカル履歴ファイル (推奨)
 HISTORY_FILE: "history.csv"
+LOCAL_ROOT_DIR: "../paperbee_ja/files"
 
 NCBI_API_KEY: "your-ncbi-api-key"
 
-# filesディレクトリへのパス（config.ymlやhistory.csvの保管場所）
-LOCAL_ROOT_DIR: "../paperbee_ja/files"
-
+# -----------------------------------------------------------------------------
 # 検索クエリ設定
-# bioRxivは複雑なクエリに対応していないため、単純なOR検索のみ記述します
-query_biorxiv: "[machine learning for single-cell] OR [deep learning for single-cell] OR [AI for single-cell]"
-
-# PubMed/arXiv用クエリ (AND, OR, NOTが使用可能)
-query_pubmed_arxiv: "([single-cell transcriptomics]) AND ([AI] OR [machine learning] OR [deep learning])"
+# -----------------------------------------------------------------------------
+query_biorxiv: "[machine learning for single-cell] OR [deep learning for single-cell]"
+query_pubmed_arxiv: "([single-cell transcriptomics]) AND ([AI] OR [machine learning])"
 
 # -----------------------------------------------------------------------------
 # LLMフィルタリング設定 (オプション)
 # -----------------------------------------------------------------------------
 LLM_FILTERING: false
-LLM_PROVIDER: "ollama"       # "ollama", "openai", "gemini" のいずれか
-LANGUAGE_MODEL: "gemma2"     # 使用するモデル名 (例: gemma2, gpt-4o-mini, gemini-2.5-flash)
-LLM_API_KEY: "your-key"      # OpenAIまたはGemini使用時のAPIキー
+LLM_PROVIDER: "ollama"            # "ollama", "openai", "gemini"
+LANGUAGE_MODEL: "gpt-oss:20b"     # フィルタリングに使用するモデル
+LLM_API_KEY: ""                   # API使用時のみ
 
-# フィルタリング用プロンプト
-# 興味のある分野や、除外したい論文の条件を記述します。
 FILTERING_PROMPT: |
-  You are a researcher in a computational biology lab. Your goal is to identify papers that propose **novel algorithms**.
-  Criteria for Relevance (YES):
-  - Proposes a new algorithm or method.
-  - Applicable to human data.
-  Criteria for Exclusion (NO):
-  - Purely clinical studies.
-  - Review papers.
-  Please answer 'yes' or 'no' to the following question: Is the following research paper relevant?
+  You are a researcher. Is the following research paper relevant to ...? (yes/no)
 
 # -----------------------------------------------------------------------------
-# 🇯🇵 日本語翻訳・要約設定 (本フォーク版の機能)
+# 🇯🇵 日本語要約・翻訳パイプライン設定
 # -----------------------------------------------------------------------------
+# 【Step 1: 要約】 (翻訳の前段階として、または要約のみに使用)
+SUMMARIZATION_ENABLED: false
+SUMMARIZATION_PROVIDER: "ollama" # "ollama", "openai", "gemini"
+SUMMARIZATION_MODEL: "gemma2"    # 要約に使用するモデル
+SUMMARIZATION_API_KEY: ""        # API使用時のみ
+
+# 翻訳モデルに渡すため、英語で要約させる
+SUMMARIZATION_PROMPT: |
+  Summarize the following academic abstract into 3 concise bullet points in English.
+  Output ONLY the bullet points.
+  
+  Abstract:
+  {text}
+
+# 【Step 2: 翻訳】 (Step 1の結果、または原文を翻訳)
 TRANSLATION_ENABLED: false
-TRANSLATION_PROVIDER: "ollama"      # "ollama", "openai", "gemini"
-TRANSLATION_MODEL: "gemma2"         # 使用するモデル名 (例: gemma2, gpt-4o-mini, gemini-2.5-flash)
-TRANSLATION_API_KEY: "your-key"     # OpenAI/Geminiの場合のみ必要
+TRANSLATION_PROVIDER: "ollama"                 # "ollama", "openai", "gemini"
+TRANSLATION_MODEL: "mitmul/plamo-2-translate"  # 翻訳に使用するモデル
+TRANSLATION_API_KEY: ""                        # API使用時のみ
 
-# 翻訳・要約用プロンプト
+# 入力されたテキスト（英語要約 or 英語原文）を日本語翻訳
 TRANSLATION_PROMPT: |
-  以下の科学論文のアブストラクトを、日本語で3点の箇条書きに要約してください。
-  出力は日本語の要約のみを行ってください。
+  Translate the following text into Japanese. Output ONLY the translation.
+  
+  Text:
+  {text}
 
 # -----------------------------------------------------------------------------
-# Slack設定 (日本語要約対応)
+# Slack設定
 # -----------------------------------------------------------------------------
 SLACK:
   is_posting_on: true
@@ -200,7 +214,7 @@ paperbee post --config /path/to/config.yml --since 1 --databases pubmed biorxiv
 --config: 設定ファイルのパス。
 --since: 何日前まで遡って検索するか（デフォルト: 1日）。
 --interactive: オプション。これを付けると、手動で採択するかを選択できます。自動化する場合は付けないでください。
---databases: オプション。検索対象データベースを指定します（例: pubmed biorxiv arxiv）。
+--databases: オプション。検索対象データベースを指定します（例: pubmed biorxiv arxiv medarxiv）。
 ```
 
 ### 自動実行（cron）
