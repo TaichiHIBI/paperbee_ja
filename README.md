@@ -214,7 +214,7 @@ paperbee post --config /path/to/config.yml --since 1 --databases pubmed biorxiv
 --config: 設定ファイルのパス。
 --since: 何日前まで遡って検索するか（デフォルト: 1日）。
 --interactive: オプション。これを付けると、手動で採択するかを選択できます。自動化する場合は付けないでください。
---databases: オプション。検索対象データベースを指定します（例: pubmed biorxiv arxiv medarxiv）。
+--databases: オプション。検索対象データベースを任意の数指定します（選択肢: pubmed biorxiv arxiv）。
 ```
 
 ### 自動実行（cron）
