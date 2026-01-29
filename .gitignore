@@ -3,6 +3,7 @@
 files/*.yml
 files/*.csv
 files/*.json
+files/*.sh
 
 
 # General things to ignore
