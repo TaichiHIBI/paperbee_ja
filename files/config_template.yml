@@ -50,8 +50,8 @@ FILTERING_PROMPT: |
 # 翻訳されたテキストを、別のLLMで要約します
 SUMMARIZATION_ENABLED: false
 SUMMARIZATION_PROVIDER: "ollama" # "ollama", "openai", "gemini" のいずれか
-SUMMARIZATION_MODEL: "" # (例: gpt-oss:20b, gpt-4o-mini, gemini-2.5-flash)
-SUMMARIZATION_API_KEY: "" # OpenAIまたはGemini使用時のAPIキー
+SUMMARIZATION_MODEL: ""          # (例: gpt-oss:20b, gpt-4o-mini, gemini-2.5-flash)
+SUMMARIZATION_API_KEY: ""        # OpenAIまたはGemini使用時のAPIキー
 
 # 要約用プロンプト
 SUMMARIZATION_PROMPT: |
@@ -63,8 +63,8 @@ SUMMARIZATION_PROMPT: |
 # -----------------------------------------------------------------------------
 TRANSLATION_ENABLED: false
 TRANSLATION_PROVIDER: "ollama" # "ollama", "openai", "gemini" のいずれか
-TRANSLATION_MODEL: "" # 使用するモデル名 (例: mitmul/plamo-2-translate, gpt-4o-mini, gemini-2.5-flash)
-TRANSLATION_API_KEY: "" # OpenAIまたはGemini使用時のAPIキー
+TRANSLATION_MODEL: ""          # 使用するモデル名 (例: mitmul/plamo-2-translate, gpt-4o-mini, gemini-2.5-flash)
+TRANSLATION_API_KEY: ""        # OpenAIまたはGemini使用時のAPIキー
 
 # 翻訳用プロンプト (翻訳特化モデルの場合は空欄。汎用モデルの場合は以下を参考にしてください)
 TRANSLATION_PROMPT: |
