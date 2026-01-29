@@ -160,11 +160,43 @@ class ArticlesProcessor:
             self.articles["Keywords"] = self.articles["keywords"].apply(lambda kws: ", ".join(kw[2:] for kw in kws))
             self.articles["URL"] = self.articles["url"]
             
+            # ここでは要約・翻訳を行わず、カラムの初期化のみを行う
+            self.articles["Abstract_JP"] = ""
+
+    def select_last_columns(self) -> None:
+        """Selects and rearranges the final set of columns for the DataFrame."""
+        # abstract (原文) は翻訳処理のために必要なので残しておく
+        expected_columns = ["DOI", "Date", "PostedDate", "IsPreprint", "Title", "Keywords", "Preprint", "Abstract_JP",  "URL", "abstract"]
+        if self.articles.empty:
+            self.articles["Preprint"] = []
+            self.articles = pd.DataFrame(columns=expected_columns)
+        else:
+            self.articles["Preprint"] = None
+            # カラムが存在しない場合は作成しておく（空のデータフレーム対策）
+            for col in expected_columns:
+                if col not in self.articles.columns:
+                    self.articles[col] = ""
+            self.articles = self.articles[expected_columns]
+
+    def run_llm_processing(self) -> None:
+        """
+        Executes summarization and translation on the current articles.
+        This method should be called AFTER filtering to save costs.
+        """
+        if self.articles.empty:
+            return
+
+        if self.summarization_enabled or self.translation_enabled:
+            print(f"Processing abstracts for {len(self.articles)} papers...")
+            
             # 処理用のテキストカラムを初期化（最初は原文を入れる）
-            self.articles["processing_text"] = self.articles.get("abstract", "")
+            # abstractカラムがない場合は処理できないためリターン
+            if "abstract" not in self.articles.columns:
+                return
+
+            self.articles["processing_text"] = self.articles["abstract"]
 
             # Step 1: 要約 (Summarization)
-            # 要約が有効なら、現在のテキストを実行
             if self.summarization_enabled:
                 print(f"🔸 Summarizing with {self.summarization_provider} ({self.summarization_model})...")
                 self.articles["processing_text"] = self.articles["processing_text"].apply(
@@ -174,11 +206,10 @@ class ArticlesProcessor:
                         self.summarization_model, 
                         self.summarization_api_key,
                         self.summarization_prompt
-                    ) if x else ""
+                    ) if x and isinstance(x, str) else ""
                 )
 
             # Step 2: 翻訳 (Translation)
-            # 翻訳が有効なら、Step 1の結果（または原文）を翻訳
             if self.translation_enabled:
                 print(f"🔹 Translating with {self.translation_provider} ({self.translation_model})...")
                 self.articles["processing_text"] = self.articles["processing_text"].apply(
@@ -188,26 +219,14 @@ class ArticlesProcessor:
                         self.translation_model, 
                         self.translation_api_key,
                         self.translation_prompt
-                    ) if x else ""
+                    ) if x and isinstance(x, str) else ""
                 )
 
-            # 最終結果を Abstract_JP に格納
-            # (要約か翻訳の少なくとも一方が有効なら結果を入れる)
-            if self.summarization_enabled or self.translation_enabled:
-                self.articles["Abstract_JP"] = self.articles["processing_text"]
-            else:
-                self.articles["Abstract_JP"] = ""
-
-    def select_last_columns(self) -> None:
-        """Selects and rearranges the final set of columns for the DataFrame."""
-        expected_columns = ["DOI", "Date", "PostedDate", "IsPreprint", "Title", "Keywords", "Preprint", "Abstract_JP",  "URL", "abstract"]
-        if self.articles.empty:
-            self.articles["Preprint"] = []
-            # Create empty DataFrame with expected columns
-            self.articles = pd.DataFrame(columns=expected_columns)
-        else:
-            self.articles["Preprint"] = None  # TODO add search for preprint of published articles
-            self.articles = self.articles[expected_columns]
+            # 最終結果を Abstract_JP カラムに格納
+            self.articles["Abstract_JP"] = self.articles["processing_text"]
+            
+            # 一時カラムを削除
+            self.articles.drop(columns=["processing_text"], inplace=True)
 
 
 class PubMedClient:

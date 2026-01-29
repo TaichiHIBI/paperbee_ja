@@ -205,7 +205,7 @@ class PapersFinder:
         processor = ArticlesProcessor(
             articles, 
             self.today_str, 
-            translation_enabled=False,
+            translation_enabled=self.translation_enabled,
             translation_provider=self.translation_provider,
             translation_model=self.translation_model,
             translation_api_key=self.translation_api_key,
@@ -237,22 +237,10 @@ class PapersFinder:
             processed_articles = cli.filter_articles()
             self.logger.info(f"Filtered down to {len(processed_articles)} articles manually.")
 
-        if self.translation_enabled and not processed_articles.empty:
-            self.logger.info(f"Translating abstracts for {len(processed_articles)} papers...")
-            print("Translating abstracts...")
-            from .utils import translate_abstract # 必要な関数をインポート
-            
-            # DataFrameの各行に対して翻訳を実行
-            processed_articles["Abstract_JP"] = processed_articles["abstract"].apply(
-                lambda x: translate_abstract(
-                    x, 
-                    self.translation_provider, 
-                    self.translation_model, 
-                    self.translation_api_key,
-                    self.translation_prompt
-                )
-            )
-        
+        processor.articles = processed_articles
+        processor.run_llm_processing()
+        processed_articles = processor.articles
+
         if "abstract" in processed_articles.columns:
             processed_articles = processed_articles.drop(columns=["abstract"])
 
