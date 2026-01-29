@@ -30,11 +30,10 @@ query_pubmed_arxiv: "([single-cell transcriptomics]) AND ([AI] OR [machine learn
 # -----------------------------------------------------------------------------
 LLM_FILTERING: false
 LLM_PROVIDER: "ollama"       # "ollama", "openai", "gemini" のいずれか
-LANGUAGE_MODEL: "gemma2"     # 使用するモデル名 (例: gemma2, gpt-4o-mini, gemini-2.5-flash)
+LANGUAGE_MODEL: "gemma2"     # フィルタリングに使用する軽量モデル
 LLM_API_KEY: "your-key"      # OpenAIまたはGemini使用時のAPIキー
 
 # フィルタリング用プロンプト
-# 興味のある分野や、除外したい論文の条件を記述します。
 FILTERING_PROMPT: |
   You are a researcher in a computational biology lab. Your goal is to identify papers that propose **novel algorithms**.
   Criteria for Relevance (YES):
@@ -46,17 +45,32 @@ FILTERING_PROMPT: |
   Please answer 'yes' or 'no' to the following question: Is the following research paper relevant?
 
 # -----------------------------------------------------------------------------
-# 🇯🇵 日本語翻訳・要約設定 (本フォーク版の機能)
+# 要約設定 (オプション。翻訳結果の要約)
+# -----------------------------------------------------------------------------
+# 翻訳されたテキストを、別のLLMで要約します
+SUMMARIZATION_ENABLED: false
+SUMMARIZATION_PROVIDER: "ollama" # "ollama", "openai", "gemini" のいずれか
+SUMMARIZATION_MODEL: "" # (例: gpt-oss:20b, gpt-4o-mini, gemini-2.5-flash)
+SUMMARIZATION_API_KEY: "" # OpenAIまたはGemini使用時のAPIキー
+
+# 要約用プロンプト
+SUMMARIZATION_PROMPT: |
+  以下の日本語の論文アブストラクトを、専門家向けに重要なポイントを3点の箇条書きで要約してください。
+  出力は要約のみを行ってください。
+
+# -----------------------------------------------------------------------------
+# 日本語翻訳設定 (オプション。PLaMo-2などによる翻訳)
 # -----------------------------------------------------------------------------
 TRANSLATION_ENABLED: false
-TRANSLATION_PROVIDER: "ollama"      # "ollama", "openai", "gemini"
-TRANSLATION_MODEL: "gemma2"         # 使用するモデル名 (例: gemma2, gpt-4o-mini, gemini-2.5-flash)
-TRANSLATION_API_KEY: "your-key"     # OpenAI/Geminiの場合のみ必要
+TRANSLATION_PROVIDER: "ollama" # "ollama", "openai", "gemini" のいずれか
+TRANSLATION_MODEL: "" # 使用するモデル名 (例: mitmul/plamo-2-translate, gpt-4o-mini, gemini-2.5-flash)
+TRANSLATION_API_KEY: "" # OpenAIまたはGemini使用時のAPIキー
 
-# 翻訳・要約用プロンプト
+# 翻訳用プロンプト (翻訳特化モデルの場合は空欄。汎用モデルの場合は以下を参考にしてください)
 TRANSLATION_PROMPT: |
-  以下の科学論文のアブストラクトを、日本語で3点の箇条書きに要約してください。
-  出力は日本語の要約のみを行ってください。
+  Translate the following scientific abstract into Japanese. Output ONLY the translation.
+
+
 
 # -----------------------------------------------------------------------------
 # Slack設定 (日本語要約対応)
@@ -68,23 +82,20 @@ SLACK:
   app_token: "your_slack_app_token"
 
 # その他のプラットフォーム設定...(使用非推奨。is_posting_on: false)
-# Telegram configuration
 TELEGRAM:
   is_posting_on: false
   bot_token: "your-telegram-bot-token"
   channel_id: "your-telegram-channel-id"
 
-# Zulip configuration
 ZULIP:
   is_posting_on: false
   prc: "path-to-your-zulip-prc"
   stream: "your-zulip-stream"
   topic: "your-zulip-topic"
 
-# Mattermost configuration
 MATTERMOST:
-  is_posting_on: false              # Set to true to enable Mattermost posting
-  url: "your-mattermost-url"        # e.g. mattermost.example.com (do NOT include https://)
-  token: "your-mattermost-access-token" # Your Mattermost personal access token (do NOT commit real tokens)
-  team: "your-mattermost-team-name" # The team name (not display name)
-  channel: "your-mattermost-channel-name" # The channel name (not display name)
+  is_posting_on: false
+  url: "your-mattermost-url"
+  token: "your-mattermost-access-token"
+  team: "your-mattermost-team-name"
+  channel: "your-mattermost-channel-name"

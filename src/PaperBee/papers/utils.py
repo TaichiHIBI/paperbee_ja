@@ -159,38 +159,44 @@ class ArticlesProcessor:
             self.articles["Title"] = self.articles["title"]
             self.articles["Keywords"] = self.articles["keywords"].apply(lambda kws: ", ".join(kw[2:] for kw in kws))
             self.articles["URL"] = self.articles["url"]
-            # --- 修正 ---
-            # translation_enabled が True の場合のみ実行
-            # Step 1: 翻訳 (Abstract -> Japanese Text)
-            if self.translation_enabled and "abstract" in self.articles.columns:
-                print(f"🔹 Translating abstracts with {self.translation_provider} ({self.translation_model})...")
-                self.articles["temp_text"] = self.articles["abstract"].apply(
+            
+            # 処理用のテキストカラムを初期化（最初は原文を入れる）
+            self.articles["processing_text"] = self.articles.get("abstract", "")
+
+            # Step 1: 要約 (Summarization)
+            # 要約が有効なら、現在のテキストを実行
+            if self.summarization_enabled:
+                print(f"🔸 Summarizing with {self.summarization_provider} ({self.summarization_model})...")
+                self.articles["processing_text"] = self.articles["processing_text"].apply(
+                    lambda x: translate_abstract(
+                        x, 
+                        self.summarization_provider, 
+                        self.summarization_model, 
+                        self.summarization_api_key,
+                        self.summarization_prompt
+                    ) if x else ""
+                )
+
+            # Step 2: 翻訳 (Translation)
+            # 翻訳が有効なら、Step 1の結果（または原文）を翻訳
+            if self.translation_enabled:
+                print(f"🔹 Translating with {self.translation_provider} ({self.translation_model})...")
+                self.articles["processing_text"] = self.articles["processing_text"].apply(
                     lambda x: translate_abstract(
                         x, 
                         self.translation_provider, 
                         self.translation_model, 
                         self.translation_api_key,
                         self.translation_prompt
-                    )
+                    ) if x else ""
                 )
-            else:
-                self.articles["temp_text"] = self.articles.get("abstract", "")
 
-            # Step 2: 要約 (Japanese Text -> Summary)
-            if self.summarization_enabled and not self.articles["temp_text"].empty:
-                print(f"🔸 Summarizing with {self.summarization_provider} ({self.summarization_model})...")
-                self.articles["Abstract_JP"] = self.articles["temp_text"].apply(
-                    lambda x: translate_abstract(  # 同じ関数を要約にも流用
-                        x, 
-                        self.summarization_provider, 
-                        self.summarization_model, 
-                        self.summarization_api_key,
-                        self.summarization_prompt
-                    )
-                )
+            # 最終結果を Abstract_JP に格納
+            # (要約か翻訳の少なくとも一方が有効なら結果を入れる)
+            if self.summarization_enabled or self.translation_enabled:
+                self.articles["Abstract_JP"] = self.articles["processing_text"]
             else:
-                # 要約しない場合は翻訳結果（または原文）をそのまま使う
-                self.articles["Abstract_JP"] = self.articles["temp_text"]
+                self.articles["Abstract_JP"] = ""
 
     def select_last_columns(self) -> None:
         """Selects and rearranges the final set of columns for the DataFrame."""
