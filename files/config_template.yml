@@ -19,10 +19,19 @@ NCBI_API_KEY: "your-ncbi-api-key"
 LOCAL_ROOT_DIR: "../paperbee_ja/files"
 
 # 検索クエリ設定
-# bioRxivは複雑なクエリに対応していないため、単純なOR検索のみ記述します
+# ─────────────────────────────────────────────
+# 【著者名検索】PubMed と arXiv で著者フィールド（[Author]/au:）を直接検索します。
+# カンマ区切りで著者名を列記してください。
+# ※ bioRxiv の著者検索は query_biorxiv に著者名を書けば動作します。
+query_authors: "Jane Doe, John Smith"
+
+# 【bioRxiv 検索クエリ】著者名を [name] 形式で書けばそのまま著者として機能します。
+# キーワード検索も兼用できます。複雑なクエリには対応していないため単純な OR 検索のみ。
 query_biorxiv: "[machine learning for single-cell] OR [deep learning for single-cell] OR [AI for single-cell]"
 
-# PubMed/arXiv用クエリ (AND, OR, NOTが使用可能)
+# 【PubMed/arXiv キーワード検索クエリ】AND, OR, NOT が使用可能。
+# query_authors と併用すると、著者検索＋キーワード検索の両方が実行されます。
+# 著者検索のみで十分な場合は空文字 "" にしても構いません（その場合は省略可）。
 query_pubmed_arxiv: "([single-cell transcriptomics]) AND ([AI] OR [machine learning] OR [deep learning])"
 
 # -----------------------------------------------------------------------------
