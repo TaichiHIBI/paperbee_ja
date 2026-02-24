@@ -289,7 +289,7 @@ class PapersFinder:
 
     def search_pubmed_by_authors(self, authors: List[str]) -> List[Dict[str, Any]]:
         """PubMedを著者名フィールドで直接検索する（[Author]フィールド使用）"""
-        author_query = " OR ".join([f'"{a}"[Author]' for a in authors])
+        author_query = " OR ".join([f'{a}[Author]' for a in authors])
         date_range = (
             f"{self.since.strftime('%Y/%m/%d')}:{self.until.strftime('%Y/%m/%d')}"
             "[Date - Publication]"
