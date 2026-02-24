@@ -128,7 +128,7 @@ class ArticlesProcessor:
 
     def filter_columns(self) -> None:
         """Filters the DataFrame to include specific columns."""
-        columns = ["databases", "publication_date", "title", "keywords", "url", "abstract"]
+        columns = ["databases", "publication_date", "title", "authors", "keywords", "url", "abstract"]
 
         if self.articles.empty:
             self.articles = pd.DataFrame(columns=columns)
@@ -159,14 +159,15 @@ class ArticlesProcessor:
             self.articles["Title"] = self.articles["title"]
             self.articles["Keywords"] = self.articles["keywords"].apply(lambda kws: ", ".join(kw[2:] for kw in kws))
             self.articles["URL"] = self.articles["url"]
-            
+            # 追加: authorsをカンマ区切りの文字列にする
+            self.articles["Authors"] = self.articles["authors"].apply(lambda auths: ", ".join(auths) if isinstance(auths, list) else str(auths))
             # ここでは要約・翻訳を行わず、カラムの初期化のみを行う
             self.articles["Abstract_JP"] = ""
 
     def select_last_columns(self) -> None:
         """Selects and rearranges the final set of columns for the DataFrame."""
         # abstract (原文) は翻訳処理のために必要なので残しておく
-        expected_columns = ["DOI", "Date", "PostedDate", "IsPreprint", "Title", "Keywords", "Preprint", "Abstract_JP",  "URL", "abstract"]
+        expected_columns = ["DOI", "Date", "PostedDate", "IsPreprint", "Title", "Authors", "Keywords", "Preprint", "Abstract_JP",  "URL", "abstract"]
         if self.articles.empty:
             self.articles["Preprint"] = []
             self.articles = pd.DataFrame(columns=expected_columns)

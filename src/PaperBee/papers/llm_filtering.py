@@ -61,6 +61,7 @@ class LLMFilter:
         client: Union[OpenAI, Client, any],
         filtering_prompt: str,
         title: str,
+        authors: str,
         keywords: Optional[List[str]] = None,
         model: str = "gpt-3.5-turbo",
     ) -> bool:
@@ -71,16 +72,16 @@ class LLMFilter:
             client (Union[OpenAI, Client]): The client used to interact with the API.
             filtering_prompt (str): The prompt used to instruct the LLM on relevance filtering.
             title (str): The title of the publication.
-            keywords (Optional[List[str]]): A list of keywords associated with the publication. Defaults to None.
+            authors (str): The authors of the publication.
             model (str): The model to use for the API call. Defaults to "gpt-3.5-turbo".
 
         Returns:
             bool: True if the publication is deemed relevant, otherwise False.
         """
         if keywords:
-            message = f"Title of the publication: '{title}'\nKeywords: {', '.join(keywords)}"
+            message = f"Title of the publication: '{title}'\nAuthors: {authors}\nKeywords: {', '.join(keywords)}"
         else:
-            message = f"Title of the publication: '{title}'"
+            message = f"Title of the publication: '{title}'\nAuthors: {authors}"
 
         content = None
 
@@ -140,6 +141,7 @@ class LLMFilter:
                 client=self.client,
                 filtering_prompt=self.filtering_prompt,
                 title=article["Title"],
+                authors=article.get("Authors", ""),
                 keywords=article.get("Keywords"),
                 model=self.model,
             ):

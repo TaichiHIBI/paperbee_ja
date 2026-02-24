@@ -241,8 +241,9 @@ class PapersFinder:
         processor.run_llm_processing()
         processed_articles = processor.articles
 
-        if "abstract" in processed_articles.columns:
-            processed_articles = processed_articles.drop(columns=["abstract"])
+        columns_to_drop = [col for col in ["abstract", "Authors"] if col in processed_articles.columns]
+        if columns_to_drop:
+            processed_articles = processed_articles.drop(columns=columns_to_drop)
 
         return processed_articles
 
