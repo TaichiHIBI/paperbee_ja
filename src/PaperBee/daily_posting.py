@@ -34,7 +34,7 @@ async def daily_papers_search(
             - Zulip response
             - Mattermost response
     """
-    root_dir, query, query_biorxiv, query_pubmed_arxiv = validate_configuration(config)
+    root_dir, query, query_biorxiv, query_pubmed_arxiv, query_authors = validate_configuration(config)
 
     slack_args = validate_platform_args(config, "SLACK")
     zulip_args = validate_platform_args(config, "ZULIP")
@@ -86,6 +86,7 @@ async def daily_papers_search(
         query=query,
         query_biorxiv=query_biorxiv,
         query_pubmed_arxiv=query_pubmed_arxiv,
+        query_authors=query_authors,
         interactive=interactive,
         llm_filtering=llm_filtering,
         filtering_prompt=filtering_prompt,

@@ -4,12 +4,13 @@ from typing import Any, Optional, Tuple
 
 def validate_configuration(
     config: dict,
-) -> Tuple[str, Optional[str], Optional[str], Optional[str]]:
+) -> Tuple[str, Optional[str], Optional[str], Optional[str], Optional[str]]:
     """
     Validate the root directory, google and NCBI credentials, and the query files.
 
     Returns:
-        Tuple[str, Optional[str], Optional[str], Optional[str]]: A tuple containing the root directory, query file, query file for BioRxiv, and query file for Pubmed and Arxiv.
+        Tuple[str, Optional[str], Optional[str], Optional[str], Optional[str]]:
+            root_dir, query, query_biorxiv, query_pubmed_arxiv, query_authors
     """
     root_dir: str = config.get("LOCAL_ROOT_DIR", "")
     if not os.path.exists(root_dir):
@@ -19,23 +20,34 @@ def validate_configuration(
     query = config.get("query", "")
     query_biorxiv = config.get("query_biorxiv", "")
     query_pubmed_arxiv = config.get("query_pubmed_arxiv", "")
+    query_authors = config.get("query_authors", "")  # 著者名リスト（カンマ区切り）
 
     if query:
         query_biorxiv = None
         query_pubmed_arxiv = None
+        query_authors = None
 
-    elif query_biorxiv and query_pubmed_arxiv:
+    elif query_biorxiv or query_pubmed_arxiv or query_authors:
         query = None
 
     else:
-        e = "No query is provided. Please set either 'query' or both 'query_biorxiv' and 'query_pubmed_arxiv' in the config file."
+        e = (
+            "No query is provided. Please set 'query', or at least one of "
+            "'query_biorxiv', 'query_pubmed_arxiv', 'query_authors' in the config file."
+        )
         raise FileNotFoundError(e)
 
     #validate_config_variable(config, "GOOGLE_SPREADSHEET_ID")
     #validate_config_variable(config, "GOOGLE_CREDENTIALS_JSON")
     validate_config_variable(config, "NCBI_API_KEY")
 
-    return root_dir, query, query_biorxiv, query_pubmed_arxiv
+    return (
+        root_dir,
+        query or None,
+        query_biorxiv or None,
+        query_pubmed_arxiv or None,
+        query_authors or None,
+    )
 
 
 def validate_platform_args(config: dict, platform: str) -> dict[str, Any]:

@@ -1,11 +1,15 @@
 import json
 import os
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from logging import Logger
+from time import sleep
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import quote
 
+import defusedxml.ElementTree as ET
 import findpapers
 import pandas as pd
+import requests
 from slack_sdk import WebClient
 from tqdm import tqdm
 
@@ -37,6 +41,7 @@ class PapersFinder:
         query: Optional[str] = None,
         query_biorxiv: Optional[str] = None,
         query_pubmed_arxiv: Optional[str] = None,
+        query_authors: Optional[str] = None,
         interactive: bool = False,
         llm_filtering: bool = False,
         filtering_prompt: Optional[str] = "",
@@ -93,6 +98,7 @@ class PapersFinder:
         self.query_biorxiv: Optional[str] = query_biorxiv if query_biorxiv else None
         self.query_pub_arx: Optional[str] = query_pubmed_arxiv
         self.query: Optional[str] = query if query else None
+        self.query_authors: Optional[str] = query_authors if query_authors else None
         self.search_file: str = os.path.join(root_dir, f"{self.today_str}.json")
         self.search_file_biorxiv: str = os.path.join(root_dir, f"{self.today_str}_biorxiv.json")
         self.search_file_pub_arx: str = os.path.join(root_dir, f"{self.today_str}_pub_arx.json")
@@ -158,23 +164,28 @@ class PapersFinder:
                 articles_dict: List[Dict[str, Any]] = json.load(papers_file)["papers"]
             articles = list(articles_dict)
         else:
-            if not self.query_biorxiv or not self.query_pub_arx:
-                e = "Both query_biorxiv and query_pubmed_arxiv must be provided if query is not provided."
-                raise ValueError(e)
+            # PubMed/arXiv キーワード検索 (findpapers)
+            non_biorxiv_dbs = [db for db in self.databases if db != "biorxiv"]
+            if self.query_pub_arx and non_biorxiv_dbs:
+                print(f"  PubMed/arXivキーワード検索中... {non_biorxiv_dbs}")
+                findpapers.search(
+                    self.search_file_pub_arx,
+                    self.query_pub_arx,
+                    self.since,
+                    self.until,
+                    self.limit,
+                    self.limit_per_database,
+                    non_biorxiv_dbs,
+                    verbose=False,
+                )
+                with open(self.search_file_pub_arx) as papers_file:
+                    articles_pub_arx: List[Dict[str, Any]] = json.load(papers_file)["papers"]
+                articles.extend(articles_pub_arx)
+                print(f"    → {len(articles_pub_arx)}件")
 
-            findpapers.search(
-                self.search_file_pub_arx,
-                self.query_pub_arx,
-                self.since,
-                self.until,
-                self.limit,
-                self.limit_per_database,
-                [
-                    database for database in self.databases if database != "biorxiv"
-                ],  # Biorxiv requires a different query
-                verbose=False,
-            )
-            if "biorxiv" in self.databases:
+            # bioRxiv 検索 (findpapers)
+            if self.query_biorxiv and "biorxiv" in self.databases:
+                print("  bioRxiv検索中...")
                 findpapers.search(
                     self.search_file_biorxiv,
                     self.query_biorxiv,
@@ -185,14 +196,39 @@ class PapersFinder:
                     ["biorxiv"],
                     verbose=False,
                 )
-            with open(self.search_file_pub_arx) as papers_file:
-                articles_pub_arx_dict: List[Dict[str, Any]] = json.load(papers_file)["papers"]
-            with open(self.search_file_biorxiv) as papers_file:
-                articles_biorxiv_dict: List[Dict[str, Any]] = json.load(papers_file)["papers"]
-            articles = articles_pub_arx_dict + articles_biorxiv_dict
+                with open(self.search_file_biorxiv) as papers_file:
+                    articles_biorxiv: List[Dict[str, Any]] = json.load(papers_file)["papers"]
+                articles.extend(articles_biorxiv)
+                print(f"    → {len(articles_biorxiv)}件")
 
+            # PubMed/arXiv 著者検索 (直接API、[Author]/au:フィールド使用)
+            if self.query_authors:
+                # YAMLリスト形式とカンマ区切り文字列の両方に対応
+                if isinstance(self.query_authors, list):
+                    authors = [str(a).strip() for a in self.query_authors if str(a).strip()]
+                else:
+                    authors = [a.strip() for a in str(self.query_authors).split(",") if a.strip()]
+                if "pubmed" in self.databases:
+                    print(f"  PubMed著者フィールド検索中... ({len(authors)}名)")
+                    pubmed_author_articles = self.search_pubmed_by_authors(authors)
+                    articles.extend(pubmed_author_articles)
+                    print(f"    → {len(pubmed_author_articles)}件")
+                if "arxiv" in self.databases:
+                    print(f"  arXiv著者フィールド検索中... ({len(authors)}名)")
+                    arxiv_author_articles = self.search_arxiv_by_authors(authors)
+                    articles.extend(arxiv_author_articles)
+                    print(f"    → {len(arxiv_author_articles)}件")
+
+            # 重複除去
+            before = len(articles)
+            articles = self._deduplicate_by_doi(articles)
+            print(f"  重複除去: {before}件 → {len(articles)}件")
+
+        # DOI取得（著者検索でURL設定済みの記事はスキップ）
         doi_extractor = PubMedClient()
-        for article in tqdm(articles):
+        for article in tqdm(articles, desc="DOI取得中"):
+            if article.get("url"):
+                continue  # 著者検索で設定済み
             if "PubMed" in article["databases"]:
                 doi = doi_extractor.get_doi_from_title(article["title"], ncbi_api_key=self.ncbi_api_key)
                 article["url"] = f"https://doi.org/{doi}" if doi else None
@@ -202,9 +238,13 @@ class PapersFinder:
                     None,
                 )
         articles = [article for article in articles if article.get("url") is not None]
+
+        # history.csv 既読除外（LLM処理・翻訳の前に実施してコスト削減）
+        articles = self._filter_by_history(articles)
+
         processor = ArticlesProcessor(
-            articles, 
-            self.today_str, 
+            articles,
+            self.today_str,
             translation_enabled=self.translation_enabled,
             translation_provider=self.translation_provider,
             translation_model=self.translation_model,
@@ -214,7 +254,7 @@ class PapersFinder:
             summarization_provider=self.summarization_provider,
             summarization_model=self.summarization_model,
             summarization_api_key=self.summarization_api_key,
-            summarization_prompt=self.summarization_prompt
+            summarization_prompt=self.summarization_prompt,
         )
         processed_articles = processor.articles
         self.logger.info(f"Found {len(processed_articles)} articles.")
@@ -226,7 +266,7 @@ class PapersFinder:
                 llm_provider=self.llm_provider,
                 model=self.model,
                 filtering_prompt=self.filtering_prompt,
-                llm_api_key=self.llm_api_key, # 変更
+                llm_api_key=self.llm_api_key,
             )
             processed_articles = llm_filter.filter_articles()
             self.logger.info(f"Filtered down to {len(processed_articles)} articles using LLM.")
@@ -246,6 +286,244 @@ class PapersFinder:
             processed_articles = processed_articles.drop(columns=columns_to_drop)
 
         return processed_articles
+
+    def search_pubmed_by_authors(self, authors: List[str]) -> List[Dict[str, Any]]:
+        """PubMedを著者名フィールドで直接検索する（[Author]フィールド使用）"""
+        author_query = " OR ".join([f'"{a}"[Author]' for a in authors])
+        date_range = (
+            f"{self.since.strftime('%Y/%m/%d')}:{self.until.strftime('%Y/%m/%d')}"
+            "[Date - Publication]"
+        )
+        full_query = f"({author_query}) AND ({date_range}) AND has abstract [FILT]"
+
+        api_key = f"&api_key={self.ncbi_api_key}" if self.ncbi_api_key else ""
+        base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
+
+        try:
+            search_url = (
+                f"{base_url}esearch.fcgi?db=pubmed"
+                f"&term={quote(full_query)}"
+                f"&retmax={self.limit_per_database}&retmode=json{api_key}"
+            )
+            resp = requests.get(search_url, timeout=30)
+            pmids = resp.json()["esearchresult"]["idlist"]
+        except Exception as e:
+            self.logger.error(f"PubMed esearch失敗: {e}")
+            return []
+
+        if not pmids:
+            return []
+
+        sleep(0.5)
+        result: List[Dict[str, Any]] = []
+
+        for i in range(0, len(pmids), 100):
+            batch = ",".join(pmids[i : i + 100])
+            fetch_url = f"{base_url}efetch.fcgi?db=pubmed&id={batch}&retmode=xml{api_key}"
+            try:
+                fetch_resp = requests.get(fetch_url, timeout=60)
+                root = ET.fromstring(fetch_resp.content)
+            except Exception as e:
+                self.logger.error(f"PubMed efetch失敗: {e}")
+                continue
+
+            for pub_article in root.findall(".//PubmedArticle"):
+                try:
+                    medline = pub_article.find(".//MedlineCitation")
+                    article_elem = medline.find(".//Article")
+
+                    title_elem = article_elem.find(".//ArticleTitle")
+                    title = "".join(title_elem.itertext()) if title_elem is not None else ""
+
+                    abstract_elems = article_elem.findall(".//AbstractText")
+                    abstract = " ".join("".join(t.itertext()) for t in abstract_elems)
+                    if not abstract:
+                        continue
+
+                    author_list: List[str] = []
+                    for auth in article_elem.findall(".//Author"):
+                        last = auth.find("LastName")
+                        fore = auth.find("ForeName")
+                        if last is not None:
+                            author_list.append(
+                                f"{fore.text} {last.text}" if fore is not None else last.text or ""
+                            )
+
+                    doi = None
+                    for loc in article_elem.findall(".//ELocationID"):
+                        if loc.attrib.get("EIdType") == "doi":
+                            doi = loc.text
+                            break
+                    if not doi:
+                        continue
+
+                    pub_date = self._extract_pubmed_date(article_elem, medline)
+                    if not pub_date:
+                        continue
+
+                    kw_list = [f"/ {kw.text}" for kw in medline.findall(".//Keyword") if kw.text]
+                    doi_url = f"https://doi.org/{doi}"
+
+                    result.append({
+                        "title": title, "abstract": abstract, "authors": author_list,
+                        "keywords": kw_list, "databases": ["PubMed"],
+                        "publication_date": pub_date,
+                        "urls": [doi_url], "url": doi_url, "doi": doi,
+                        "selected": None, "citations": None, "comments": None,
+                        "categories": None, "number_of_pages": None, "pages": None,
+                        "publication": None,
+                    })
+                except Exception as e:
+                    self.logger.error(f"PubMed記事パース失敗: {e}")
+                    continue
+
+            sleep(0.5)
+
+        return result
+
+    def search_arxiv_by_authors(self, authors: List[str]) -> List[Dict[str, Any]]:
+        """arXiv APIを著者フィールドで直接検索する（au:フィールド使用）"""
+        author_query = " OR ".join([f'au:"{a}"' for a in authors])
+        url = (
+            f"http://export.arxiv.org/api/query"
+            f"?search_query={quote(author_query)}"
+            f"&sortBy=submittedDate&sortOrder=descending"
+            f"&max_results={self.limit_per_database}"
+        )
+        try:
+            resp = requests.get(url, timeout=60)
+            root = ET.fromstring(resp.content)
+        except Exception as e:
+            self.logger.error(f"arXiv著者検索失敗: {e}")
+            return []
+
+        ns = {"atom": "http://www.w3.org/2005/Atom"}
+        result: List[Dict[str, Any]] = []
+
+        for entry in root.findall("atom:entry", ns):
+            try:
+                pub_elem = entry.find("atom:published", ns)
+                if pub_elem is None:
+                    continue
+                pub_str = pub_elem.text[:10]
+                pub_date = datetime.strptime(pub_str, "%Y-%m-%d").date()
+                if not (self.since <= pub_date <= self.until):
+                    continue
+
+                title_elem = entry.find("atom:title", ns)
+                title = title_elem.text.strip() if title_elem is not None else ""
+
+                summary_elem = entry.find("atom:summary", ns)
+                abstract = summary_elem.text.strip() if summary_elem is not None else ""
+                if not abstract:
+                    continue
+
+                author_list = [
+                    a.find("atom:name", ns).text
+                    for a in entry.findall("atom:author", ns)
+                    if a.find("atom:name", ns) is not None
+                ]
+
+                id_elem = entry.find("atom:id", ns)
+                if id_elem is None:
+                    continue
+                arxiv_id = id_elem.text.split("/abs/")[-1].split("v")[0]
+                doi = f"10.48550/arXiv.{arxiv_id}"
+                doi_url = f"https://doi.org/{doi}"
+
+                result.append({
+                    "title": title, "abstract": abstract, "authors": author_list,
+                    "keywords": [], "databases": ["arXiv"],
+                    "publication_date": pub_str,
+                    "urls": [doi_url, f"https://arxiv.org/abs/{arxiv_id}"],
+                    "url": doi_url, "doi": doi,
+                    "selected": None, "citations": None, "comments": None,
+                    "categories": None, "number_of_pages": None, "pages": None,
+                    "publication": None,
+                })
+            except Exception as e:
+                self.logger.error(f"arXiv記事パース失敗: {e}")
+                continue
+
+        return result
+
+    def _extract_pubmed_date(self, article_elem: Any, medline: Any) -> Optional[str]:
+        """PubMed XMLから出版日を抽出する（優先順位: ArticleDate > PubDate > DateCompleted）"""
+        for ad in article_elem.findall(".//ArticleDate"):
+            year = ad.findtext("Year")
+            if year:
+                month = ad.findtext("Month", "01")
+                day = ad.findtext("Day", "01")
+                return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+
+        journal = article_elem.find(".//Journal")
+        if journal is not None:
+            pd_elem = journal.find(".//PubDate")
+            if pd_elem is not None:
+                year = pd_elem.findtext("Year")
+                if year:
+                    month = self._month_to_num(pd_elem.findtext("Month", "01"))
+                    day = pd_elem.findtext("Day", "01")
+                    return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+
+        dc = medline.find("DateCompleted")
+        if dc is not None:
+            year = dc.findtext("Year")
+            if year:
+                month = dc.findtext("Month", "01") or "01"
+                day = dc.findtext("Day", "01") or "01"
+                return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+
+        return None
+
+    def _month_to_num(self, month: str) -> str:
+        """月名（英語省略形）を2桁数字に変換する"""
+        mapping = {
+            "Jan": "01", "Feb": "02", "Mar": "03", "Apr": "04",
+            "May": "05", "Jun": "06", "Jul": "07", "Aug": "08",
+            "Sep": "09", "Oct": "10", "Nov": "11", "Dec": "12",
+        }
+        return mapping.get(month, month.zfill(2) if month.isdigit() else "01")
+
+    def _deduplicate_by_doi(self, articles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """DOIまたはタイトルで重複記事を除去する（最初の出現を優先）"""
+        seen: set = set()
+        unique: List[Dict[str, Any]] = []
+        for article in articles:
+            key = (article.get("doi") or "").strip().lower() or article.get("title", "").strip().lower()
+            if key and key not in seen:
+                seen.add(key)
+                unique.append(article)
+        return unique
+
+    def _filter_by_history(self, articles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """history.csvを参照して既投稿論文をLLM処理前に除外する"""
+        if os.path.isabs(self.history_file):
+            history_file_path = self.history_file
+        else:
+            history_file_path = os.path.join(self.root_dir, self.history_file)
+
+        if not os.path.exists(history_file_path):
+            return articles
+
+        try:
+            history_df = pd.read_csv(history_file_path)
+            if "DOI" not in history_df.columns:
+                return articles
+            published_dois = set(history_df["DOI"].dropna().astype(str).str.strip().str.lower())
+        except Exception as e:
+            self.logger.error(f"履歴ファイルの読み込みに失敗しました: {e}")
+            return articles
+
+        def doi_from_url(url: str) -> str:
+            idx = url.find("10.")
+            return url[idx:].strip().lower() if idx >= 0 else url.strip().lower()
+
+        filtered = [a for a in articles if doi_from_url(a.get("url", "")) not in published_dois]
+        skipped = len(articles) - len(filtered)
+        if skipped:
+            print(f"  履歴除外: {skipped}件をスキップ（{len(filtered)}件が新規）")
+        return filtered
 
     def update_google_sheet(self, processed_articles: pd.DataFrame, row: int = 2) -> List[List[Any]]:
         return [list(row) for row in processed_articles.values.tolist()]
