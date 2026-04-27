@@ -374,7 +374,7 @@ class PapersFinder:
                         "urls": [doi_url], "url": doi_url, "doi": doi,
                         "selected": None, "citations": None, "comments": None,
                         "categories": None, "number_of_pages": None, "pages": None,
-                        "publication": {"name": journal_name} if journal_name else None,
+                        "publication": {"title": journal_name} if journal_name else None,
                     })
                 except Exception as e:
                     self.logger.error(f"PubMed記事パース失敗: {e}")

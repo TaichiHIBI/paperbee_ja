@@ -166,7 +166,7 @@ class ArticlesProcessor:
             # 追加: authorsをカンマ区切りの文字列にする
             self.articles["Authors"] = self.articles["authors"].apply(lambda auths: ", ".join(auths) if isinstance(auths, list) else str(auths))
             self.articles["Journal"] = self.articles["publication"].apply(
-                lambda x: x.get("name", "") if isinstance(x, dict) else ""
+                lambda x: (x.get("title") or x.get("name") or "") if isinstance(x, dict) else ""
             )
             # ここでは要約・翻訳を行わず、カラムの初期化のみを行う
             self.articles["Abstract_JP"] = ""
