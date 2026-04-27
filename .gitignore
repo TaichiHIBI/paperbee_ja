@@ -4,6 +4,7 @@ files/*.yml
 files/*.csv
 files/*.json
 files/*.sh
+claude.md
 
 
 # General things to ignore
