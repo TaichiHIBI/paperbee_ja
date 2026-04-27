@@ -1,4 +1,5 @@
 import os
+import re
 from logging import Logger
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -47,15 +48,17 @@ class SlackPaperPublisher:
         preprints = []
         for paper in papers_list:
             emoji = ":pencil:" if paper[3] == "TRUE" else ":rolled_up_newspaper:"
-            # paper[7] が Abstract_JP の場合 (utils.pyの並び順に依存)
-            abstract_jp = paper[7] if len(paper) > 7 else ""
-
-            # URLは最後尾 (paper[-1])
-            url = paper[-1]
+            # 列順: [DOI, Date, PostedDate, IsPreprint, Title, Journal, Keywords, Preprint, Abstract_JP, URL]
             title = paper[4]
-            
-            # 引用記号(>)を使って見やすく表示
-            formatted_paper = f"{emoji} <{url}|{title}>\n> {abstract_jp}"
+            journal = paper[5] if len(paper) > 5 else ""
+            abstract_jp = re.sub(r'\*\*(.+?)\*\*', r'*\1*', paper[8] if len(paper) > 8 else "")
+            url = paper[-1]
+
+            formatted_paper = f"{emoji} <{url}|{title}>"
+            if journal:
+                formatted_paper += f"\n> *{journal}*"
+            if abstract_jp:
+                formatted_paper += f"\n> {abstract_jp}"
             if paper[3] == "TRUE":
                 preprints.append(formatted_paper)
             else:

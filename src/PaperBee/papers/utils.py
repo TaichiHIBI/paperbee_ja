@@ -131,9 +131,13 @@ class ArticlesProcessor:
         columns = ["databases", "publication_date", "title", "authors", "keywords", "url", "abstract"]
 
         if self.articles.empty:
-            self.articles = pd.DataFrame(columns=columns)
-        else:
-            self.articles = self.articles.loc[:, columns]
+            self.articles = pd.DataFrame(columns=columns + ["publication"])
+            return
+
+        if "publication" not in self.articles.columns:
+            self.articles["publication"] = None
+
+        self.articles = self.articles.loc[:, columns + ["publication"]]
 
     def extract_doi(self) -> None:
         """Extracts DOIs from URLs and adds them as a new column."""
@@ -161,13 +165,16 @@ class ArticlesProcessor:
             self.articles["URL"] = self.articles["url"]
             # 追加: authorsをカンマ区切りの文字列にする
             self.articles["Authors"] = self.articles["authors"].apply(lambda auths: ", ".join(auths) if isinstance(auths, list) else str(auths))
+            self.articles["Journal"] = self.articles["publication"].apply(
+                lambda x: x.get("name", "") if isinstance(x, dict) else ""
+            )
             # ここでは要約・翻訳を行わず、カラムの初期化のみを行う
             self.articles["Abstract_JP"] = ""
 
     def select_last_columns(self) -> None:
         """Selects and rearranges the final set of columns for the DataFrame."""
         # abstract (原文) は翻訳処理のために必要なので残しておく
-        expected_columns = ["DOI", "Date", "PostedDate", "IsPreprint", "Title", "Authors", "Keywords", "Preprint", "Abstract_JP",  "URL", "abstract"]
+        expected_columns = ["DOI", "Date", "PostedDate", "IsPreprint", "Title", "Journal", "Authors", "Keywords", "Preprint", "Abstract_JP", "URL", "abstract"]
         if self.articles.empty:
             self.articles["Preprint"] = []
             self.articles = pd.DataFrame(columns=expected_columns)

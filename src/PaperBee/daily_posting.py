@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import time
 from typing import Any, List, Optional, Tuple, cast
 
 import yaml
@@ -13,8 +14,17 @@ from PaperBee.papers import (
 
 
 def load_config(config_path: str) -> dict[Any, Any]:
-    with open(config_path) as f:
-        return cast(dict[Any, Any], yaml.safe_load(f))
+    # OneDrive sync can cause EDEADLK (errno 11) on macOS; retry with backoff
+    for attempt in range(3):
+        try:
+            with open(config_path) as f:
+                return cast(dict[Any, Any], yaml.safe_load(f))
+        except OSError as e:
+            if e.errno == 11 and attempt < 2:
+                time.sleep(2 ** attempt)
+            else:
+                raise
+    raise OSError(11, "設定ファイルの読み込みに複数回失敗しました", config_path)
 
 
 async def daily_papers_search(

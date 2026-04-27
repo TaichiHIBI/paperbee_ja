@@ -364,6 +364,9 @@ class PapersFinder:
                     kw_list = [f"/ {kw.text}" for kw in medline.findall(".//Keyword") if kw.text]
                     doi_url = f"https://doi.org/{doi}"
 
+                    journal_elem = article_elem.find(".//Journal/Title")
+                    journal_name = journal_elem.text if journal_elem is not None else None
+
                     result.append({
                         "title": title, "abstract": abstract, "authors": author_list,
                         "keywords": kw_list, "databases": ["PubMed"],
@@ -371,7 +374,7 @@ class PapersFinder:
                         "urls": [doi_url], "url": doi_url, "doi": doi,
                         "selected": None, "citations": None, "comments": None,
                         "categories": None, "number_of_pages": None, "pages": None,
-                        "publication": None,
+                        "publication": {"name": journal_name} if journal_name else None,
                     })
                 except Exception as e:
                     self.logger.error(f"PubMed記事パース失敗: {e}")
@@ -507,10 +510,24 @@ class PapersFinder:
             return articles
 
         try:
-            history_df = pd.read_csv(history_file_path)
+            history_df = pd.read_csv(history_file_path, on_bad_lines='skip')
             if "DOI" not in history_df.columns:
                 return articles
             published_dois = set(history_df["DOI"].dropna().astype(str).str.strip().str.lower())
+        except OSError as e:
+            if e.errno == 11:  # EDEADLK on macOS (OneDrive sync conflict)
+                sleep(3)
+                try:
+                    history_df = pd.read_csv(history_file_path, on_bad_lines='skip')
+                    if "DOI" not in history_df.columns:
+                        return articles
+                    published_dois = set(history_df["DOI"].dropna().astype(str).str.strip().str.lower())
+                except Exception as e2:
+                    self.logger.error(f"履歴ファイルの読み込みに失敗しました（リトライ後）: {e2}")
+                    return articles
+            else:
+                self.logger.error(f"履歴ファイルの読み込みに失敗しました: {e}")
+                return articles
         except Exception as e:
             self.logger.error(f"履歴ファイルの読み込みに失敗しました: {e}")
             return articles
@@ -648,15 +665,27 @@ class PapersFinder:
             history_file_path = os.path.join(self.root_dir, self.history_file)
         
         if os.path.exists(history_file_path):
-            try:
-                history_df = pd.read_csv(history_file_path)
-                if "DOI" in history_df.columns:
-                    published_dois = history_df["DOI"].tolist()
-                    new_articles = processed_articles[~processed_articles["DOI"].isin(published_dois)]
-                else:
+            for attempt in range(3):
+                try:
+                    history_df = pd.read_csv(history_file_path, on_bad_lines='skip')
+                    if "DOI" in history_df.columns:
+                        published_dois = history_df["DOI"].tolist()
+                        new_articles = processed_articles[~processed_articles["DOI"].isin(published_dois)]
+                    else:
+                        new_articles = processed_articles
+                    break
+                except OSError as e:
+                    if e.errno == 11 and attempt < 2:  # EDEADLK on macOS
+                        sleep(2 ** attempt)
+                    else:
+                        self.logger.error(f"履歴ファイルの読み込みに失敗しました: {e}")
+                        new_articles = processed_articles
+                        break
+                except Exception as e:
+                    self.logger.error(f"履歴ファイルの読み込みに失敗しました: {e}")
                     new_articles = processed_articles
-            except Exception as e:
-                self.logger.error(f"履歴ファイルの読み込みに失敗しました: {e}")
+                    break
+            else:
                 new_articles = processed_articles
         else:
             new_articles = processed_articles
@@ -665,12 +694,21 @@ class PapersFinder:
             self.logger.info("新しい論文は見つかりませんでした（すべて履歴済み）。")
             return []
 
-        try:
-            mode = 'a' if os.path.exists(history_file_path) else 'w'
-            header = not os.path.exists(history_file_path)
-            new_articles.to_csv(history_file_path, mode=mode, index=False, header=header, encoding='utf-8-sig')
-            self.logger.info(f"{len(new_articles)} 件の新しい論文を {history_file_path} に保存しました。")
-        except Exception as e:
-            self.logger.error(f"履歴ファイルへの書き込みに失敗しました: {e}")
+        for attempt in range(3):
+            try:
+                mode = 'a' if os.path.exists(history_file_path) else 'w'
+                header = not os.path.exists(history_file_path)
+                new_articles.to_csv(history_file_path, mode=mode, index=False, header=header, encoding='utf-8-sig')
+                self.logger.info(f"{len(new_articles)} 件の新しい論文を {history_file_path} に保存しました。")
+                break
+            except OSError as e:
+                if e.errno == 11 and attempt < 2:  # EDEADLK on macOS
+                    sleep(2 ** attempt)
+                else:
+                    self.logger.error(f"履歴ファイルへの書き込みに失敗しました: {e}")
+                    break
+            except Exception as e:
+                self.logger.error(f"履歴ファイルへの書き込みに失敗しました: {e}")
+                break
 
         return new_articles.values.tolist()
