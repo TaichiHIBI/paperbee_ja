@@ -47,6 +47,11 @@ griffe = "^1.1.1"
 requires = ["poetry-core>=1.0.0", "cython"]
 build-backend = "poetry.core.masonry.api"
 
+[dependency-groups]
+dev = [
+    "setuptools>=82.0.0",
+]
+
 [tool.mypy]
 files = ["src/PaperBee"]
 exclude = ['src/PaperBee/listeners', 'src/PaperBee/app.py']
