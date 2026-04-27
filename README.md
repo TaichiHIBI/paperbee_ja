@@ -15,18 +15,37 @@ PaperBeeは、新しい科学論文を自動的に検索し、お気に入りの
 
 🟠 Mattermost
 
-## ✨ このバージョンでの変更点：日本語要訳・翻訳機能
+## ✨ このバージョンでの変更点
+
+### 日本語要約・翻訳機能
 本フォーク版では、LLM（Ollama, OpenAI, Gemini）を使用して、論文のアブストラクトを自動的に日本語に翻訳・要約する機能を追加しています。
 
-### 2026/01/29 更新情報
-本バージョンでは「要約」と「翻訳」のプロセスを分離しました。これにより、以下の柔軟な運用が可能です。
+### 2026/04/27 更新情報
+Slack投稿にジャーナル名（掲載誌）の表示を追加しました。
 
-1. **要約 + 翻訳（推奨）**: 英語で要約を作成し、それを日本語に翻訳（PLaMo-2等の翻訳特化モデルの性能を活かせます）。
-2. **要約のみ**: 英語のまま、短くまとまった要約を出力。
-3. **翻訳のみ**: 要約せず、アブストラクト全文を日本語化。
+**Slack表示形式:**
+```
+📰 論文タイトル
+> *Nature Neuroscience*
+> 日本語要約...
+```
+
+### 2026/02/24 更新情報
+**著者名検索機能**を追加しました。`query_authors` にカンマ区切りで著者名を指定すると、PubMed（`[Author]`フィールド）・arXiv（`au:`フィールド）を直接検索できます。キーワード検索（`query_pubmed_arxiv`）との併用も可能です。
+
+⚠️ 著者検索はbioRxivには対応していません。bioRxivの著者検索は `query_biorxiv` に著者名を直接記述してください。
+
+### 2026/01/29 更新情報
+本バージョンでは「要約」と「翻訳」のプロセスを分離しました。処理順序は **Step1（要約）→ Step2（翻訳）** の固定順です。
+
+| SUMMARIZATION_ENABLED | TRANSLATION_ENABLED | 動作 |
+|---|---|---|
+| true | true | 英語で要約 → 日本語に翻訳（推奨） |
+| false | true | アブストラクト全文を日本語に翻訳 |
+| true | false | 英語のまま要約 |
 
 ### ⚠️ 重要なお知らせ
-日本語でのアブストラクト要約・翻訳出力は、現在「Slack (🟣)」のみに対応しています。 他のプラットフォーム（Telegram, Zulip, Mattermost）では、通常の英語タイトルとリンクのみが表示されます。
+日本語でのアブストラクト要約・翻訳出力、およびジャーナル名表示は、現在「Slack (🟣)」のみに対応しています。他のプラットフォーム（Telegram, Zulip, Mattermost）では、通常の英語タイトルとリンクのみが表示されます。
 
 ### 🚀 仕組み
 PaperBeeは、findpapers ライブラリを使用して、指定されたキーワードでPubMed、arXiv、bioRxivから科学論文を検索します。
@@ -36,11 +55,11 @@ PaperBeeは、findpapers ライブラリを使用して、指定されたキー�
 ### 🗂️ プロジェクト構造（主な変更点）
 * src/PaperBee/papers/utils.py – 翻訳機能 (translate_abstract) を追加。
 
-* src/PaperBee/papers/slack_papers_formatter.py – 日本語要約を表示できるようにフォーマットを修正。
+* src/PaperBee/papers/slack_papers_formatter.py – 日本語要約・ジャーナル名を表示できるようにフォーマットを修正。
 
 * src/PaperBee/daily_posting.py – 設定ファイルから翻訳オプションを読み込むように修正。
 
-* src/PaperBee/papers/papers_finder.py – 翻訳フローおよびローカル履歴管理機能を統合。
+* src/PaperBee/papers/papers_finder.py – 翻訳フロー、著者検索機能、ジャーナル名抽出、ローカル履歴管理機能を統合。
 
 * src/PaperBee/papers/llm_filtering.py – LLMフィルタリングにGeminiを追加。
 
@@ -78,15 +97,15 @@ pip install .
 #### OpenAI API
 1. [このページ](https://platform.openai.com/settings/organization/api-keys)からOpenAIアカウントにログインし、API Keyを作成してください。
 
-2. config.ymlの `OEPENAI_API_KEY` に取得したAPI Keyを貼り付けてください。（LLMフィルタリング用）
+2. config.ymlの `LLM_API_KEY` に取得したAPI Keyを貼り付けてください。（LLMフィルタリング用）
 
 3. config.ymlの `TRANSLATION_API_KEY` に取得したAPI Keyを貼り付けてください。（翻訳用）
 #### Google AI API
 1. [このページ](https://ai.google.dev/aistudio?hl=ja)からGoogleアカウントにログインし、Gemini API Keyを作成してください。
 
-2. config.ymlの `GEMINI_API_KEY` に取得したAPI Keyを貼り付けてください。（LLMフィルタリング用）
+2. config.ymlの `LLM_API_KEY` に取得したAPI Keyを貼り付けてください。（LLMフィルタリング用）
 
-2. config.ymlの `TRANSLATION_API_KEY` に取得したAPI Keyを貼り付けてください。（翻訳用）
+3. config.ymlの `TRANSLATION_API_KEY` に取得したAPI Keyを貼り付けてください。（翻訳用）
 #### Ollama 
 * [このページ](https://github.com/ollama/ollama)からOllamaをダウンロードし、お使いのデバイスに合ったローカルLLMモデルをダウンロードしてください。選択したLLMモデル名は `LANGUAGE_MODEL` `TRANSLATIONAL_MODEL` に使用します。
   ```bash
@@ -123,10 +142,14 @@ LOCAL_ROOT_DIR: "../paperbee_ja/files"
 NCBI_API_KEY: "your-ncbi-api-key"
 
 # -----------------------------------------------------------------------------
-# 検索クエリ設定
+# 検索クエリ設定（いずれか1つ以上を設定。組み合わせ可）
 # -----------------------------------------------------------------------------
+# キーワード検索
 query_biorxiv: "[machine learning for single-cell] OR [deep learning for single-cell]"
 query_pubmed_arxiv: "([single-cell transcriptomics]) AND ([AI] OR [machine learning])"
+
+# 著者名直接検索（PubMed/arXiv のみ対応。カンマ区切りで複数指定可）
+# query_authors: "Jane Doe, John Smith"
 
 # -----------------------------------------------------------------------------
 # LLMフィルタリング設定 (オプション)
@@ -148,13 +171,9 @@ SUMMARIZATION_PROVIDER: "ollama" # "ollama", "openai", "gemini"
 SUMMARIZATION_MODEL: "gemma2"    # 要約に使用するモデル
 SUMMARIZATION_API_KEY: ""        # API使用時のみ
 
-# 翻訳モデルに渡すため、英語で要約させる
 SUMMARIZATION_PROMPT: |
-  Summarize the following academic abstract into 3 concise bullet points in English.
-  Output ONLY the bullet points.
-  
-  Abstract:
-  {text}
+  以下の日本語の論文アブストラクトを、専門家向けに重要なポイントを3点の箇条書きで要約してください。
+  出力は要約のみを行ってください。
 
 # 【Step 2: 翻訳】 (Step 1の結果、または原文を翻訳)
 TRANSLATION_ENABLED: false
@@ -164,10 +183,7 @@ TRANSLATION_API_KEY: ""                        # API使用時のみ
 
 # 入力されたテキスト（英語要約 or 英語原文）を日本語翻訳
 TRANSLATION_PROMPT: |
-  Translate the following text into Japanese. Output ONLY the translation.
-  
-  Text:
-  {text}
+  Translate the following scientific abstract into Japanese. Output ONLY the translation.
 
 # -----------------------------------------------------------------------------
 # Slack設定
