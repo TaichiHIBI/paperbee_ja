@@ -1,3 +1,4 @@
+import csv
 import json
 import os
 from datetime import date, datetime, timedelta
@@ -21,6 +22,53 @@ from .slack_papers_formatter import SlackPaperPublisher
 from .telegram_papers_formatter import TelegramPaperPublisher
 from .utils import ArticlesProcessor, PubMedClient
 from .zulip_papers_formatter import ZulipPaperPublisher
+
+# history.csv の正準スキーマ（列順は Slack フォーマッタのインデックスにも依存するため変更不可）
+HISTORY_COLUMNS = [
+    "DOI", "Date", "PostedDate", "IsPreprint", "Title", "Journal",
+    "Keywords", "Preprint", "Abstract_JP", "URL",
+]
+
+# 著者検索を分割する際の1バッチあたりの著者数。
+# 著者を全員1本のクエリにORで連結するとGET URLが長くなり、PubMed(HTTP 414)や
+# arXiv(HTTP 400)がリクエストを拒否するため、この単位で分割して検索・統合する。
+AUTHOR_QUERY_BATCH_SIZE = 25
+
+
+def _strip_trailing_empty(row: List[Any]) -> List[Any]:
+    """末尾の空セル（表計算ソフト等が付与する余分なカンマ）を除去する。"""
+    end = len(row)
+    while end > 0 and (row[end - 1] is None or str(row[end - 1]).strip() == ""):
+        end -= 1
+    return list(row[:end])
+
+
+def _normalize_history_row(row: List[Any]) -> Optional[List[Any]]:
+    """任意の列数の履歴行を正準10列へ正規化する。DOIが無ければ None。
+
+    過去のスキーマドリフト（Journal列の有無）や表計算ソフトによる列増殖に
+    耐えるため、列名ではなく位置と内容から復元する。
+    """
+    eff = _strip_trailing_empty(row)
+    if not eff or not str(eff[0]).strip():
+        return None
+
+    if len(eff) == len(HISTORY_COLUMNS):  # 10列: 現行スキーマ
+        return list(eff)
+    if len(eff) == len(HISTORY_COLUMNS) - 1:  # 9列: 旧スキーマ（Journalなし）
+        return list(eff[:5]) + [""] + list(eff[5:])
+
+    # 破損行: DOI と URL を最優先で救出するベストエフォート
+    out = {c: "" for c in HISTORY_COLUMNS}
+    out["DOI"] = eff[0]
+    for f in reversed(eff):
+        if isinstance(f, str) and f.startswith("http"):
+            out["URL"] = f
+            break
+    for i, col in enumerate(["Date", "PostedDate", "IsPreprint", "Title"], start=1):
+        if i < len(eff):
+            out[col] = eff[i]
+    return [out[c] for c in HISTORY_COLUMNS]
 
 
 class PapersFinder:
@@ -48,6 +96,7 @@ class PapersFinder:
         llm_provider: Optional[str] = "",
         model: Optional[str] = "",
         llm_api_key: Optional[str] = "", # OPENAI_API_KEY から変更
+        filter_unedited: bool = False,
         slack_bot_token: str = "",
         slack_channel_id: str = "",
         telegram_bot_token: str = "",
@@ -109,6 +158,7 @@ class PapersFinder:
         self.model: str = model or "gpt-3.5-turbo"
         self.filtering_prompt: str = filtering_prompt or ""
         self.llm_api_key: str = llm_api_key or "" # 変更
+        self.filter_unedited: bool = filter_unedited
         # Messaging platforms
         self.slack_bot_token: str = slack_bot_token
         self.slack_channel_id: str = slack_channel_id
@@ -138,6 +188,57 @@ class PapersFinder:
         self.summarization_api_key = summarization_api_key
         self.summarization_prompt = summarization_prompt
 
+    def _run_findpapers(
+        self,
+        search_file: str,
+        query: str,
+        databases: List[str],
+        retries: int = 2,
+        retry_on_empty: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """findpapers.search を実行して記事リストを返す。
+
+        bioRxiv コネクタはレート制限等で同一クエリでも間欠的に0件を返すことがあるため、
+        リトライして最も多く取得できた結果を採用する。
+
+        Args:
+            retries: 追加試行回数（合計 retries+1 回まで実行）。
+            retry_on_empty: True の場合、0件でも（例外でなくても）再試行する。
+                bioRxiv 検索のように取りこぼしを吸収したいときに使う。
+        """
+        best: List[Dict[str, Any]] = []
+        for attempt in range(retries + 1):
+            ok = False
+            try:
+                findpapers.search(
+                    search_file,
+                    query,
+                    self.since,
+                    self.until,
+                    self.limit,
+                    self.limit_per_database,
+                    databases,
+                    verbose=False,
+                )
+                with open(search_file) as papers_file:
+                    papers = list(json.load(papers_file)["papers"])
+                ok = True
+            except Exception as e:
+                self.logger.warning(
+                    f"findpapers検索失敗 (試行 {attempt + 1}/{retries + 1}, {databases}): {e}"
+                )
+                papers = []
+
+            if len(papers) > len(best):
+                best = papers
+
+            # 成功して非空、または（成功して空だが空リトライ不要）なら終了
+            if ok and (papers or not retry_on_empty):
+                break
+            if attempt < retries:
+                sleep(2)
+        return best
+
     def find_and_process_papers(self) -> pd.DataFrame:
         """
         Executes the search for papers based on predefined criteria and processes them.
@@ -150,54 +251,24 @@ class PapersFinder:
         articles: List[Dict[str, Any]] = []
 
         if self.query:
-            findpapers.search(
-                self.search_file,
-                self.query,
-                self.since,
-                self.until,
-                self.limit,
-                self.limit_per_database,
-                self.databases,
-                verbose=False,
-            )
-            with open(self.search_file) as papers_file:
-                articles_dict: List[Dict[str, Any]] = json.load(papers_file)["papers"]
-            articles = list(articles_dict)
+            articles = self._run_findpapers(self.search_file, self.query, self.databases)
         else:
             # PubMed/arXiv キーワード検索 (findpapers)
             non_biorxiv_dbs = [db for db in self.databases if db != "biorxiv"]
             if self.query_pub_arx and non_biorxiv_dbs:
                 print(f"  PubMed/arXivキーワード検索中... {non_biorxiv_dbs}")
-                findpapers.search(
-                    self.search_file_pub_arx,
-                    self.query_pub_arx,
-                    self.since,
-                    self.until,
-                    self.limit,
-                    self.limit_per_database,
-                    non_biorxiv_dbs,
-                    verbose=False,
+                articles_pub_arx = self._run_findpapers(
+                    self.search_file_pub_arx, self.query_pub_arx, non_biorxiv_dbs
                 )
-                with open(self.search_file_pub_arx) as papers_file:
-                    articles_pub_arx: List[Dict[str, Any]] = json.load(papers_file)["papers"]
                 articles.extend(articles_pub_arx)
                 print(f"    → {len(articles_pub_arx)}件")
 
-            # bioRxiv 検索 (findpapers)
+            # bioRxiv 検索 (findpapers)。間欠的な0件返しに備えて空でもリトライする。
             if self.query_biorxiv and "biorxiv" in self.databases:
                 print("  bioRxiv検索中...")
-                findpapers.search(
-                    self.search_file_biorxiv,
-                    self.query_biorxiv,
-                    self.since,
-                    self.until,
-                    self.limit,
-                    self.limit_per_database,
-                    ["biorxiv"],
-                    verbose=False,
+                articles_biorxiv = self._run_findpapers(
+                    self.search_file_biorxiv, self.query_biorxiv, ["biorxiv"], retry_on_empty=True
                 )
-                with open(self.search_file_biorxiv) as papers_file:
-                    articles_biorxiv: List[Dict[str, Any]] = json.load(papers_file)["papers"]
                 articles.extend(articles_biorxiv)
                 print(f"    → {len(articles_biorxiv)}件")
 
@@ -241,6 +312,10 @@ class PapersFinder:
 
         # history.csv 既読除外（LLM処理・翻訳の前に実施してコスト削減）
         articles = self._filter_by_history(articles)
+
+        # unedited version除外（CrossRef references-count=0）
+        if self.filter_unedited:
+            articles = self._filter_unedited_by_crossref(articles)
 
         processor = ArticlesProcessor(
             articles,
@@ -288,28 +363,42 @@ class PapersFinder:
         return processed_articles
 
     def search_pubmed_by_authors(self, authors: List[str]) -> List[Dict[str, Any]]:
-        """PubMedを著者名フィールドで直接検索する（[Author]フィールド使用）"""
-        author_query = " OR ".join([f'{a}[Author]' for a in authors])
+        """PubMedを著者名フィールドで直接検索する（[Author]フィールド使用）。
+
+        著者を全員1本のクエリにORで連結するとGET URLが長くなりHTTP 414になるため、
+        AUTHOR_QUERY_BATCH_SIZE 名ずつに分割してesearchし、得られたPMIDを統合する。
+        """
         date_range = (
             f"{self.since.strftime('%Y/%m/%d')}:{self.until.strftime('%Y/%m/%d')}"
             "[Date - Publication]"
         )
-        full_query = f"({author_query}) AND ({date_range}) AND has abstract [FILT]"
 
         api_key = f"&api_key={self.ncbi_api_key}" if self.ncbi_api_key else ""
         base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
 
-        try:
-            search_url = (
-                f"{base_url}esearch.fcgi?db=pubmed"
-                f"&term={quote(full_query)}"
-                f"&retmax={self.limit_per_database}&retmode=json{api_key}"
-            )
-            resp = requests.get(search_url, timeout=30)
-            pmids = resp.json()["esearchresult"]["idlist"]
-        except Exception as e:
-            self.logger.error(f"PubMed esearch失敗: {e}")
-            return []
+        pmids: List[str] = []
+        seen_pmids: set = set()
+        for start in range(0, len(authors), AUTHOR_QUERY_BATCH_SIZE):
+            author_batch = authors[start : start + AUTHOR_QUERY_BATCH_SIZE]
+            author_query = " OR ".join([f'{a}[Author]' for a in author_batch])
+            full_query = f"({author_query}) AND ({date_range}) AND has abstract [FILT]"
+            try:
+                search_url = (
+                    f"{base_url}esearch.fcgi?db=pubmed"
+                    f"&term={quote(full_query)}"
+                    f"&retmax={self.limit_per_database}&retmode=json{api_key}"
+                )
+                resp = requests.get(search_url, timeout=30)
+                batch_pmids = resp.json()["esearchresult"]["idlist"]
+            except Exception as e:
+                batch_no = start // AUTHOR_QUERY_BATCH_SIZE + 1
+                self.logger.error(f"PubMed esearch失敗 (著者バッチ {batch_no}): {e}")
+                continue
+            for pmid in batch_pmids:
+                if pmid not in seen_pmids:
+                    seen_pmids.add(pmid)
+                    pmids.append(pmid)
+            sleep(0.5)
 
         if not pmids:
             return []
@@ -385,68 +474,81 @@ class PapersFinder:
         return result
 
     def search_arxiv_by_authors(self, authors: List[str]) -> List[Dict[str, Any]]:
-        """arXiv APIを著者フィールドで直接検索する（au:フィールド使用）"""
-        author_query = " OR ".join([f'au:"{a}"' for a in authors])
-        url = (
-            f"http://export.arxiv.org/api/query"
-            f"?search_query={quote(author_query)}"
-            f"&sortBy=submittedDate&sortOrder=descending"
-            f"&max_results={self.limit_per_database}"
-        )
-        try:
-            resp = requests.get(url, timeout=60)
-            root = ET.fromstring(resp.content)
-        except Exception as e:
-            self.logger.error(f"arXiv著者検索失敗: {e}")
-            return []
+        """arXiv APIを著者フィールドで直接検索する（au:フィールド使用）。
 
+        著者を全員1本のクエリにORで連結するとGET URLが長くなりHTTP 400になるため、
+        AUTHOR_QUERY_BATCH_SIZE 名ずつに分割して検索し、DOIで重複除去して統合する。
+        """
         ns = {"atom": "http://www.w3.org/2005/Atom"}
         result: List[Dict[str, Any]] = []
+        seen_dois: set = set()
 
-        for entry in root.findall("atom:entry", ns):
+        for start in range(0, len(authors), AUTHOR_QUERY_BATCH_SIZE):
+            author_batch = authors[start : start + AUTHOR_QUERY_BATCH_SIZE]
+            author_query = " OR ".join([f'au:"{a}"' for a in author_batch])
+            url = (
+                f"http://export.arxiv.org/api/query"
+                f"?search_query={quote(author_query)}"
+                f"&sortBy=submittedDate&sortOrder=descending"
+                f"&max_results={self.limit_per_database}"
+            )
             try:
-                pub_elem = entry.find("atom:published", ns)
-                if pub_elem is None:
-                    continue
-                pub_str = pub_elem.text[:10]
-                pub_date = datetime.strptime(pub_str, "%Y-%m-%d").date()
-                if not (self.since <= pub_date <= self.until):
-                    continue
-
-                title_elem = entry.find("atom:title", ns)
-                title = title_elem.text.strip() if title_elem is not None else ""
-
-                summary_elem = entry.find("atom:summary", ns)
-                abstract = summary_elem.text.strip() if summary_elem is not None else ""
-                if not abstract:
-                    continue
-
-                author_list = [
-                    a.find("atom:name", ns).text
-                    for a in entry.findall("atom:author", ns)
-                    if a.find("atom:name", ns) is not None
-                ]
-
-                id_elem = entry.find("atom:id", ns)
-                if id_elem is None:
-                    continue
-                arxiv_id = id_elem.text.split("/abs/")[-1].split("v")[0]
-                doi = f"10.48550/arXiv.{arxiv_id}"
-                doi_url = f"https://doi.org/{doi}"
-
-                result.append({
-                    "title": title, "abstract": abstract, "authors": author_list,
-                    "keywords": [], "databases": ["arXiv"],
-                    "publication_date": pub_str,
-                    "urls": [doi_url, f"https://arxiv.org/abs/{arxiv_id}"],
-                    "url": doi_url, "doi": doi,
-                    "selected": None, "citations": None, "comments": None,
-                    "categories": None, "number_of_pages": None, "pages": None,
-                    "publication": None,
-                })
+                resp = requests.get(url, timeout=60)
+                root = ET.fromstring(resp.content)
             except Exception as e:
-                self.logger.error(f"arXiv記事パース失敗: {e}")
+                batch_no = start // AUTHOR_QUERY_BATCH_SIZE + 1
+                self.logger.error(f"arXiv著者検索失敗 (著者バッチ {batch_no}): {e}")
                 continue
+
+            for entry in root.findall("atom:entry", ns):
+                try:
+                    pub_elem = entry.find("atom:published", ns)
+                    if pub_elem is None:
+                        continue
+                    pub_str = pub_elem.text[:10]
+                    pub_date = datetime.strptime(pub_str, "%Y-%m-%d").date()
+                    if not (self.since <= pub_date <= self.until):
+                        continue
+
+                    title_elem = entry.find("atom:title", ns)
+                    title = title_elem.text.strip() if title_elem is not None else ""
+
+                    summary_elem = entry.find("atom:summary", ns)
+                    abstract = summary_elem.text.strip() if summary_elem is not None else ""
+                    if not abstract:
+                        continue
+
+                    author_list = [
+                        a.find("atom:name", ns).text
+                        for a in entry.findall("atom:author", ns)
+                        if a.find("atom:name", ns) is not None
+                    ]
+
+                    id_elem = entry.find("atom:id", ns)
+                    if id_elem is None:
+                        continue
+                    arxiv_id = id_elem.text.split("/abs/")[-1].split("v")[0]
+                    doi = f"10.48550/arXiv.{arxiv_id}"
+                    if doi in seen_dois:
+                        continue
+                    seen_dois.add(doi)
+                    doi_url = f"https://doi.org/{doi}"
+
+                    result.append({
+                        "title": title, "abstract": abstract, "authors": author_list,
+                        "keywords": [], "databases": ["arXiv"],
+                        "publication_date": pub_str,
+                        "urls": [doi_url, f"https://arxiv.org/abs/{arxiv_id}"],
+                        "url": doi_url, "doi": doi,
+                        "selected": None, "citations": None, "comments": None,
+                        "categories": None, "number_of_pages": None, "pages": None,
+                        "publication": None,
+                    })
+                except Exception as e:
+                    self.logger.error(f"arXiv記事パース失敗: {e}")
+                    continue
+
+            sleep(0.5)
 
         return result
 
@@ -499,38 +601,85 @@ class PapersFinder:
                 unique.append(article)
         return unique
 
+    def _history_path(self) -> str:
+        """history.csv の絶対パスを返す。"""
+        if os.path.isabs(self.history_file):
+            return self.history_file
+        return os.path.join(self.root_dir, self.history_file)
+
+    def _load_history_df(self, history_file_path: str) -> Optional[pd.DataFrame]:
+        """history.csv を堅牢に読み込み、正準スキーマの DataFrame を返す。
+
+        csv モジュールで1行ずつ読み、列数の揺れ（過去の Journal 列ドリフトや
+        表計算ソフトによる列増殖）を正準10列へ正規化する。pandas の
+        ``on_bad_lines='skip'`` のように行を無言で取りこぼさない。
+        読み込めない場合は None。
+        """
+        if not os.path.exists(history_file_path):
+            return None
+
+        for attempt in range(3):
+            try:
+                with open(history_file_path, encoding="utf-8-sig", newline="") as f:
+                    raw_rows = list(csv.reader(f))
+                break
+            except OSError as e:
+                if e.errno == 11 and attempt < 2:  # EDEADLK on macOS (OneDrive同期)
+                    sleep(2 ** attempt)
+                else:
+                    self.logger.error(f"履歴ファイルの読み込みに失敗しました: {e}")
+                    return None
+            except Exception as e:
+                self.logger.error(f"履歴ファイルの読み込みに失敗しました: {e}")
+                return None
+        else:
+            return None
+
+        if not raw_rows:
+            return pd.DataFrame(columns=HISTORY_COLUMNS)
+
+        normalized = []
+        dropped = 0
+        for r in raw_rows[1:]:  # 先頭はヘッダー
+            canon = _normalize_history_row(r)
+            if canon is None:
+                dropped += 1
+                continue
+            normalized.append(canon)
+        if dropped:
+            self.logger.warning(f"履歴ファイルでDOI不明の{dropped}行を除外しました: {history_file_path}")
+        return pd.DataFrame(normalized, columns=HISTORY_COLUMNS)
+
+    def _write_history_df(self, df: pd.DataFrame, history_file_path: str) -> bool:
+        """history.csv を正準スキーマ・QUOTE_ALL で全体書き直し（原子的置換）。"""
+        df = df.reindex(columns=HISTORY_COLUMNS, fill_value="")
+        tmp_path = f"{history_file_path}.tmp"
+        for attempt in range(3):
+            try:
+                df.to_csv(
+                    tmp_path, index=False, header=True,
+                    encoding="utf-8-sig", quoting=csv.QUOTE_ALL,
+                )
+                os.replace(tmp_path, history_file_path)
+                return True
+            except OSError as e:
+                if e.errno == 11 and attempt < 2:  # EDEADLK on macOS
+                    sleep(2 ** attempt)
+                else:
+                    self.logger.error(f"履歴ファイルへの書き込みに失敗しました: {e}")
+                    return False
+            except Exception as e:
+                self.logger.error(f"履歴ファイルへの書き込みに失敗しました: {e}")
+                return False
+        return False
+
     def _filter_by_history(self, articles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """history.csvを参照して既投稿論文をLLM処理前に除外する"""
-        if os.path.isabs(self.history_file):
-            history_file_path = self.history_file
-        else:
-            history_file_path = os.path.join(self.root_dir, self.history_file)
-
-        if not os.path.exists(history_file_path):
+        history_df = self._load_history_df(self._history_path())
+        if history_df is None or "DOI" not in history_df.columns:
             return articles
 
-        try:
-            history_df = pd.read_csv(history_file_path, on_bad_lines='skip')
-            if "DOI" not in history_df.columns:
-                return articles
-            published_dois = set(history_df["DOI"].dropna().astype(str).str.strip().str.lower())
-        except OSError as e:
-            if e.errno == 11:  # EDEADLK on macOS (OneDrive sync conflict)
-                sleep(3)
-                try:
-                    history_df = pd.read_csv(history_file_path, on_bad_lines='skip')
-                    if "DOI" not in history_df.columns:
-                        return articles
-                    published_dois = set(history_df["DOI"].dropna().astype(str).str.strip().str.lower())
-                except Exception as e2:
-                    self.logger.error(f"履歴ファイルの読み込みに失敗しました（リトライ後）: {e2}")
-                    return articles
-            else:
-                self.logger.error(f"履歴ファイルの読み込みに失敗しました: {e}")
-                return articles
-        except Exception as e:
-            self.logger.error(f"履歴ファイルの読み込みに失敗しました: {e}")
-            return articles
+        published_dois = set(history_df["DOI"].dropna().astype(str).str.strip().str.lower())
 
         def doi_from_url(url: str) -> str:
             idx = url.find("10.")
@@ -540,6 +689,42 @@ class PapersFinder:
         skipped = len(articles) - len(filtered)
         if skipped:
             print(f"  履歴除外: {skipped}件をスキップ（{len(filtered)}件が新規）")
+        return filtered
+
+    def _filter_unedited_by_crossref(self, articles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """CrossRef API の references-count が 0 のジャーナル論文（unedited version）を除外する。
+        bioRxiv (10.1101/) や arXiv (10.48550/) のプレプリントは対象外。"""
+        PREPRINT_PREFIXES = ("10.1101/", "10.48550/")
+        filtered = []
+        headers = {"User-Agent": "PaperBee/1.0 (mailto:paperbee@example.com)"}
+        skipped = 0
+
+        for article in articles:
+            doi = article.get("doi", "")
+            if not doi or doi.startswith(PREPRINT_PREFIXES):
+                filtered.append(article)
+                continue
+
+            try:
+                resp = requests.get(
+                    f"https://api.crossref.org/works/{doi}",
+                    headers=headers,
+                    timeout=10,
+                )
+                if resp.status_code == 200:
+                    ref_count = resp.json().get("message", {}).get("references-count", None)
+                    if ref_count == 0:
+                        skipped += 1
+                        sleep(0.3)
+                        continue
+            except Exception as e:
+                self.logger.warning(f"CrossRef参照数チェック失敗 ({doi}): {e}")
+
+            filtered.append(article)
+            sleep(0.3)
+
+        if skipped:
+            print(f"  unedited除外: {skipped}件をスキップ（CrossRef references-count=0）")
         return filtered
 
     def update_google_sheet(self, processed_articles: pd.DataFrame, row: int = 2) -> List[List[Any]]:
@@ -659,34 +844,18 @@ class PapersFinder:
         return processed_articles, response
     
     def update_local_history(self, processed_articles: pd.DataFrame) -> List[List[Any]]:
-        if os.path.isabs(self.history_file):
-            history_file_path = self.history_file
-        else:
-            history_file_path = os.path.join(self.root_dir, self.history_file)
-        
-        if os.path.exists(history_file_path):
-            for attempt in range(3):
-                try:
-                    history_df = pd.read_csv(history_file_path, on_bad_lines='skip')
-                    if "DOI" in history_df.columns:
-                        published_dois = history_df["DOI"].tolist()
-                        new_articles = processed_articles[~processed_articles["DOI"].isin(published_dois)]
-                    else:
-                        new_articles = processed_articles
-                    break
-                except OSError as e:
-                    if e.errno == 11 and attempt < 2:  # EDEADLK on macOS
-                        sleep(2 ** attempt)
-                    else:
-                        self.logger.error(f"履歴ファイルの読み込みに失敗しました: {e}")
-                        new_articles = processed_articles
-                        break
-                except Exception as e:
-                    self.logger.error(f"履歴ファイルの読み込みに失敗しました: {e}")
-                    new_articles = processed_articles
-                    break
-            else:
-                new_articles = processed_articles
+        history_file_path = self._history_path()
+
+        # 既存履歴を堅牢に読み込む（列ドリフトを正規化して取りこぼさない）
+        history_df = self._load_history_df(history_file_path)
+        published_dois: set = set()
+        if history_df is not None and "DOI" in history_df.columns:
+            published_dois = set(history_df["DOI"].dropna().astype(str).str.strip().str.lower())
+
+        # 新規論文のみ抽出（DOIを正規化して照合）
+        if not processed_articles.empty and "DOI" in processed_articles.columns:
+            norm_doi = processed_articles["DOI"].astype(str).str.strip().str.lower()
+            new_articles = processed_articles[~norm_doi.isin(published_dois)]
         else:
             new_articles = processed_articles
 
@@ -694,21 +863,19 @@ class PapersFinder:
             self.logger.info("新しい論文は見つかりませんでした（すべて履歴済み）。")
             return []
 
-        for attempt in range(3):
-            try:
-                mode = 'a' if os.path.exists(history_file_path) else 'w'
-                header = not os.path.exists(history_file_path)
-                new_articles.to_csv(history_file_path, mode=mode, index=False, header=header, encoding='utf-8-sig')
-                self.logger.info(f"{len(new_articles)} 件の新しい論文を {history_file_path} に保存しました。")
-                break
-            except OSError as e:
-                if e.errno == 11 and attempt < 2:  # EDEADLK on macOS
-                    sleep(2 ** attempt)
-                else:
-                    self.logger.error(f"履歴ファイルへの書き込みに失敗しました: {e}")
-                    break
-            except Exception as e:
-                self.logger.error(f"履歴ファイルへの書き込みに失敗しました: {e}")
-                break
+        # 既存＋新規を正準スキーマで結合し、ファイル全体を書き直す（追記による列ドリフトを根絶）
+        new_for_history = new_articles.reindex(columns=HISTORY_COLUMNS, fill_value="")
+        if history_df is not None and not history_df.empty:
+            combined = pd.concat([history_df, new_for_history], ignore_index=True)
+        else:
+            combined = new_for_history
+        combined = combined.drop_duplicates(
+            subset="DOI", keep="first"
+        ) if "DOI" in combined.columns else combined
+
+        if self._write_history_df(combined, history_file_path):
+            self.logger.info(f"{len(new_articles)} 件の新しい論文を {history_file_path} に保存しました。")
+
+        new_articles = new_for_history
 
         return new_articles.values.tolist()

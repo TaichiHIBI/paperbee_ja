@@ -85,7 +85,8 @@ async def daily_papers_search(
     summarization_prompt = str(config.get("SUMMARIZATION_PROMPT", "以下のテキストを日本語で3点の箇条書きに要約してください。:\n\n{text}"))
 
     history_file = str(config.get("HISTORY_FILE", "history.csv"))
-    
+    filter_unedited = bool(config.get("FILTER_UNEDITED", False))
+
     finder = PapersFinder(
         root_dir=root_dir,
         history_file = history_file,
@@ -103,6 +104,7 @@ async def daily_papers_search(
         llm_provider=LLM_PROVIDER,
         model=LANGUAGE_MODEL,
         llm_api_key=llm_api_key, # Renamed
+        filter_unedited=filter_unedited,
         slack_bot_token=slack_args["bot_token"],
         slack_channel_id=slack_args["channel_id"],
         telegram_bot_token=telegram_args["bot_token"],

@@ -35,6 +35,13 @@ query_biorxiv: "[machine learning for single-cell] OR [deep learning for single-
 query_pubmed_arxiv: "([single-cell transcriptomics]) AND ([AI] OR [machine learning] OR [deep learning])"
 
 # -----------------------------------------------------------------------------
+# Unedited version フィルタリング (オプション)
+# -----------------------------------------------------------------------------
+# CrossRef API の references-count が 0 の論文を除外します。
+# 編集前の early access 版（unedited manuscript）に相当する論文を除去するために使用します。
+FILTER_UNEDITED: false
+
+# -----------------------------------------------------------------------------
 # LLMフィルタリング設定 (オプション)
 # -----------------------------------------------------------------------------
 LLM_FILTERING: false
