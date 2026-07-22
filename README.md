@@ -15,61 +15,33 @@ PaperBeeは、新しい科学論文を自動的に検索し、お気に入りの
 
 🟠 Mattermost
 
-## ✨ このバージョンでの変更点
+## ✨ 本フォーク版の主な機能
 
-### 日本語要約・翻訳機能
-本フォーク版では、LLM（Ollama, OpenAI, Gemini）を使用して、論文のアブストラクトを自動的に日本語に翻訳・要約する機能を追加しています。
+元の [theislab/paperbee](https://github.com/theislab/paperbee) に対して、以下を追加・強化しています。
 
-### 2026/07/22 更新情報
-検索の取りこぼしを減らす堅牢化を行いました。
+- **日本語要約・翻訳** — LLM（Ollama / OpenAI / Gemini）でアブストラクトを日本語に要約・翻訳（「要約→翻訳」の2段階。片方のみの利用も可）
+- **ジャーナル名表示** — Slack投稿に掲載誌名を表示
+- **著者名検索** — `query_authors` で PubMed / arXiv の著者フィールドを直接検索（多数の著者も自動分割で対応）
+- **LLMフィルタリング** — OpenAI / Ollama に加え Gemini に対応
+- **検索の堅牢化** — bioRxiv の間欠的な取りこぼしに対するリトライ、`FILTER_UNEDITED` オプション
 
-- **bioRxiv検索のリトライ**: bioRxiv APIはレート制限等により同一クエリでも間欠的に0件を返すことがあります。0件時に自動で再試行（最大3回・2秒間隔）し、最も多く取得できた結果を採用するようにしました。これにより狭いクエリでの取りこぼしが減ります。
-- **著者検索の分割（多人数対応）**: `query_authors` に多数（目安25名以上）の著者を指定すると、検索URLが長くなりPubMed（HTTP 414）・arXiv（HTTP 400）がリクエストを拒否し、**エラーも出さず0件**になっていました。著者を25名ずつのバッチに分割して検索し、結果を重複除去して統合するよう修正しました。1バッチが失敗しても残りのバッチは有効です。
-- **Unedited version フィルタ（オプション）**: `FILTER_UNEDITED: true` を設定すると、CrossRefの参照数が0の論文（編集前のearly access版に相当）を除外します。
-- **履歴CSVの読み込み堅牢化**: 過去のスキーマ変更（Journal列の有無）や表計算ソフトによる列増殖に耐えるよう、履歴行を正準スキーマへ正規化してから読み込むようにしました。
-
-### 2026/04/27 更新情報
-Slack投稿にジャーナル名（掲載誌）の表示を追加しました。
-
-**Slack表示形式:**
-```
-📰 論文タイトル
-> *Nature Neuroscience*
-> 日本語要約...
-```
-
-### 2026/02/24 更新情報
-**著者名検索機能**を追加しました。`query_authors` にカンマ区切りで著者名を指定すると、PubMed（`[Author]`フィールド）・arXiv（`au:`フィールド）を直接検索できます。キーワード検索（`query_pubmed_arxiv`）との併用も可能です。
-
-⚠️ 著者検索はbioRxivには対応していません。bioRxivの著者検索は `query_biorxiv` に著者名を直接記述してください。
-
-### 2026/01/29 更新情報
-本バージョンでは「要約」と「翻訳」のプロセスを分離しました。処理順序は **Step1（要約）→ Step2（翻訳）** の固定順です。
-
-| SUMMARIZATION_ENABLED | TRANSLATION_ENABLED | 動作 |
-|---|---|---|
-| true | true | 英語で要約 → 日本語に翻訳（推奨） |
-| false | true | アブストラクト全文を日本語に翻訳 |
-| true | false | 英語のまま要約 |
-
-### ⚠️ 重要なお知らせ
-日本語でのアブストラクト要約・翻訳出力、およびジャーナル名表示は、現在「Slack (🟣)」のみに対応しています。他のプラットフォーム（Telegram, Zulip, Mattermost）では、通常の英語タイトルとリンクのみが表示されます。
+> ⚠️ 日本語の要約・翻訳とジャーナル名表示は **Slack のみ** 対応です。Telegram / Zulip / Mattermost では英語タイトルとリンクのみ表示されます。
 
 ### 🚀 仕組み
-PaperBeeは、findpapers ライブラリを使用して、指定されたキーワードでPubMed、arXiv、bioRxivから科学論文を検索します。
+findpapers ライブラリで PubMed・arXiv・bioRxiv を検索し、手動選別または LLM による自動フィルタリングで論文を選別します。選別結果は GoogleスプレッドシートまたはローカルCSVに記録され、Slack等へ通知されます。設定は `config.yml` 1ファイルで完結します。
 
-取得した論文は、コマンドラインでの手動選別、または LLMによる自動フィルタリング によって選別されます。 選別された論文はGoogleスプレッドシートまたはローカルのCSVファイルに記録され、Slackなどのチャンネルに通知されます。 設定はシンプルな config.yml ファイルで行います。
+詳しい変更履歴は末尾の [更新履歴](#-更新履歴) を参照してください。
 
-### 🗂️ プロジェクト構造（主な変更点）
-* src/PaperBee/papers/utils.py – 翻訳機能 (translate_abstract) を追加。
+<details>
+<summary>🗂️ フォーク元からの主な変更ファイル</summary>
 
-* src/PaperBee/papers/slack_papers_formatter.py – 日本語要約・ジャーナル名を表示できるようにフォーマットを修正。
+- `papers/utils.py` – 翻訳機能 (`translate_abstract`)
+- `papers/slack_papers_formatter.py` – 日本語要約・ジャーナル名の表示
+- `daily_posting.py` – 設定からの翻訳／フィルタオプション読み込み
+- `papers/papers_finder.py` – 翻訳フロー、著者検索（多人数分割）、ジャーナル名抽出、ローカル履歴管理、bioRxiv リトライ、Unedited version フィルタ
+- `papers/llm_filtering.py` – Gemini フィルタリング対応
 
-* src/PaperBee/daily_posting.py – 設定ファイルから翻訳オプションを読み込むように修正。
-
-* src/PaperBee/papers/papers_finder.py – 翻訳フロー、著者検索機能（多人数分割対応）、ジャーナル名抽出、ローカル履歴管理、bioRxiv検索リトライ、Unedited versionフィルタを統合。
-
-* src/PaperBee/papers/llm_filtering.py – LLMフィルタリングにGeminiを追加。
+</details>
 
 ## 📦 インストール
 ソースコードを修正しているため、以下の手順でインストールしてください：
@@ -134,6 +106,9 @@ config.yml の例（日本語要約機能・ローカル履歴管理付き）
 ⚠️queryの書き方やFiltering promptの形式はフォーク元を参照してください。
 
 config_yourforcus.ymlを複数作成してそれぞれ実行することで、異なる分野の論文をサーチすることができます。その場合は、history.csvの名前も合わせて変更するように `HISTORY_FILE` のファイル名を設定してください。
+
+<details>
+<summary>📄 config.yml テンプレート全文（クリックで展開）</summary>
 
 ```yaml
 # -----------------------------------------------------------------------------
@@ -225,6 +200,8 @@ MATTERMOST:
   channel: "your-mattermost-channel-name" # The channel name (not display name)
 ```
 
+</details>
+
 ## ▶️ Botの実行
 
 設定が完了したら、以下のコマンドで実行します。
@@ -255,6 +232,53 @@ paperbee post --config /path/to/config.yml --since 1 --databases pubmed biorxiv
 * 定期実行する場合は、常に起動しているサーバマシンなどで実行するか、お使いのデバイスをスリープしない設定にすることをお勧めします。
 * フィルタリングプロンプトの形式や、検索クエリの書き方は非常に重要です。
 * 翻訳部分は翻訳特化モデルにすると、より良い結果が得られます。
+
+## 📋 更新履歴
+
+<details>
+<summary><b>2026/07/22</b> — 検索の堅牢化</summary>
+
+- **bioRxiv検索のリトライ**: 0件時に自動で再試行（最大3回・2秒間隔）し、最も多く取得できた結果を採用。レート制限等による間欠的な取りこぼしを軽減。
+- **著者検索の分割**: `query_authors` に多数の著者を指定するとURLが長くなり PubMed（HTTP 414）・arXiv（HTTP 400）が**エラーも出さず0件**になっていた問題を、25名ずつのバッチ検索＋重複除去で修正。
+- **`FILTER_UNEDITED`（オプション）**: CrossRef の参照数が0の論文（編集前の early access 版に相当）を除外。
+- **履歴CSVの堅牢化**: 過去のスキーマ変更や列数の揺れに耐えるよう、履歴行を正準スキーマへ正規化してから読み込み。
+
+</details>
+
+<details>
+<summary><b>2026/04/27</b> — ジャーナル名表示</summary>
+
+Slack投稿に掲載誌名を表示。
+
+```
+📰 論文タイトル
+> *Nature Neuroscience*
+> 日本語要約...
+```
+
+</details>
+
+<details>
+<summary><b>2026/02/24</b> — 著者名検索</summary>
+
+`query_authors` にカンマ区切りで著者名を指定すると PubMed（`[Author]`）・arXiv（`au:`）を直接検索。キーワード検索（`query_pubmed_arxiv`）と併用可。
+
+⚠️ bioRxiv は非対応。bioRxiv で著者検索する場合は `query_biorxiv` に著者名を直接記述してください。
+
+</details>
+
+<details>
+<summary><b>2026/01/29</b> — 要約と翻訳の分離</summary>
+
+処理順序は **Step1（要約）→ Step2（翻訳）** の固定順。
+
+| SUMMARIZATION_ENABLED | TRANSLATION_ENABLED | 動作 |
+|---|---|---|
+| true | true | 英語で要約 → 日本語に翻訳（推奨） |
+| false | true | アブストラクト全文を日本語に翻訳 |
+| true | false | 英語のまま要約 |
+
+</details>
 
 ## 📚 Reference
 
