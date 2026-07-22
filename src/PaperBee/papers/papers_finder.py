@@ -23,6 +23,50 @@ from .telegram_papers_formatter import TelegramPaperPublisher
 from .utils import ArticlesProcessor, PubMedClient
 from .zulip_papers_formatter import ZulipPaperPublisher
 
+
+def _patch_findpapers_merge_duplications() -> None:
+    """findpapers の ``Search.merge_duplications`` を None 耐性のあるものに差し替える。
+
+    PubMed等から不正レコード（publication_date が None 等）を取得すると、
+    ``paper_by_key`` に None 値が混入し、``merge_duplications`` が
+    ``'NoneType' object has no attribute 'publication_date'`` で例外を送出する。
+    その結果 ``findpapers.search`` 全体が失敗し、**検索結果が丸ごと0件**になる
+    （1件の不正レコードで全論文を取りこぼす）。
+
+    site-packages を直接書き換えると再インストールで失われるため、import時に
+    ラッパーで置換する。None エントリを事前に除去し、それでも例外が出る場合は
+    マージ（重複統合）だけスキップする。重複は後段の ``_deduplicate_by_doi`` と
+    history 照合で吸収されるため、スキップしても実害はない。
+    """
+    try:
+        from findpapers.models.search import Search
+    except Exception:  # pragma: no cover - findpapers構造変更時のフォールバック
+        return
+
+    if getattr(Search.merge_duplications, "_paperbee_patched", False):
+        return
+
+    original = Search.merge_duplications
+
+    def safe_merge_duplications(self: Any, similarity_threshold: float = 0.95) -> None:
+        # 混入した None エントリを各コレクションから除去
+        bad_keys = [k for k, v in self.paper_by_key.items() if v is None]
+        for k in bad_keys:
+            del self.paper_by_key[k]
+        if None in self.papers:
+            self.papers = {p for p in self.papers if p is not None}
+        try:
+            return original(self, similarity_threshold)
+        except Exception as e:  # 統合に失敗しても検索結果自体は失わない
+            print(f"  [findpapers] merge_duplications をスキップ（{type(e).__name__}: {e}）")
+            return None
+
+    safe_merge_duplications._paperbee_patched = True  # type: ignore[attr-defined]
+    Search.merge_duplications = safe_merge_duplications  # type: ignore[assignment]
+
+
+_patch_findpapers_merge_duplications()
+
 # history.csv の正準スキーマ（列順は Slack フォーマッタのインデックスにも依存するため変更不可）
 HISTORY_COLUMNS = [
     "DOI", "Date", "PostedDate", "IsPreprint", "Title", "Journal",

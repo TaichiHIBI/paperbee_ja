@@ -5,6 +5,7 @@ files/*.csv
 files/*.json
 files/*.sh
 claude.md
+scripts
 
 
 # General things to ignore

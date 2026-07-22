@@ -5,7 +5,7 @@
 
 PaperBeeは、新しい科学論文を自動的に検索し、お気に入りのチャットツールに投稿するためのPythonアプリケーションです。
 
-> **最終更新: 2026/07/22** — bioRxiv検索のリトライと著者検索の多人数対応を追加し、検索の取りこぼしを軽減しました。過去に検索がヒットしにくかった場合は更新を推奨します。（[更新履歴](#-更新履歴)）
+> **最終更新: 2026/07/23** — findpapers の不正レコードによる検索全体クラッシュを回避し、bioRxivリトライ・著者検索の多人数対応と合わせて検索の取りこぼしを大幅に軽減しました。過去に検索がヒットしにくかった場合は更新を推奨します。（[更新履歴](#-更新履歴)）
 
 ### 現在サポートされているプラットフォーム:
 
@@ -40,7 +40,7 @@ findpapers ライブラリで PubMed・arXiv・bioRxiv を検索し、手動選�
 - `papers/utils.py` – 翻訳機能 (`translate_abstract`)
 - `papers/slack_papers_formatter.py` – 日本語要約・ジャーナル名の表示
 - `daily_posting.py` – 設定からの翻訳／フィルタオプション読み込み
-- `papers/papers_finder.py` – 翻訳フロー、著者検索（多人数分割）、ジャーナル名抽出、ローカル履歴管理、bioRxiv リトライ、Unedited version フィルタ
+- `papers/papers_finder.py` – 翻訳フロー、著者検索（多人数分割）、ジャーナル名抽出、ローカル履歴管理、bioRxiv リトライ、Unedited version フィルタ、findpapers クラッシュ回避パッチ
 - `papers/llm_filtering.py` – Gemini フィルタリング対応
 
 </details>
@@ -236,6 +236,13 @@ paperbee post --config /path/to/config.yml --since 1 --databases pubmed biorxiv
 * 翻訳部分は翻訳特化モデルにすると、より良い結果が得られます。
 
 ## 📋 更新履歴
+
+<details>
+<summary><b>2026/07/23</b> — findpapersクラッシュ回避</summary>
+
+- **不正レコードによる検索全体クラッシュを回避**: findpapers の `merge_duplications` が、一部の不正なPubMedレコード（`publication_date` が None 等）を含む結果で `AttributeError` を送出し、**検索結果が丸ごと0件**になる問題があった（1件の不正レコードで全論文を取りこぼす）。import時に None 耐性のあるラッパーへ差し替えて回避。重複統合に失敗しても後段のDOI除外・history照合で吸収されるため実害なし。site-packagesを直接書き換えないため再インストールにも強い。
+
+</details>
 
 <details>
 <summary><b>2026/07/22</b> — 検索の堅牢化</summary>
