@@ -5,7 +5,7 @@
 
 PaperBeeは、新しい科学論文を自動的に検索し、お気に入りのチャットツールに投稿するためのPythonアプリケーションです。
 
-> **最終更新: 2026/07/23** — findpapers の不正レコードによる検索全体クラッシュを回避し、bioRxivリトライ・著者検索の多人数対応と合わせて検索の取りこぼしを大幅に軽減しました。過去に検索がヒットしにくかった場合は更新を推奨します。（[更新履歴](#-更新履歴)）
+> **最終更新: 2026/10/20** — Claude API に対応しました（フィルタリングの最終判定・日本語要約）。ローカルLLMを一次ふるい・代行役として組み合わせられ、月間予算ガードと判定キャッシュで支出を抑えます。あわせて、これまで実質0件だった **bioRxiv・arXiv のキーワード検索と bioRxiv の著者検索を修正**しました。（[更新履歴](#-更新履歴)）
 
 ### 現在サポートされているプラットフォーム:
 
@@ -21,16 +21,17 @@ PaperBeeは、新しい科学論文を自動的に検索し、お気に入りの
 
 元の [theislab/paperbee](https://github.com/theislab/paperbee) に対して、以下を追加・強化しています。
 
-- **日本語要約・翻訳** — LLM（Ollama / OpenAI / Gemini）でアブストラクトを日本語に要約・翻訳（「要約→翻訳」の2段階。片方のみの利用も可）
+- **日本語要約・翻訳** — LLM（Claude / Ollama / OpenAI / Gemini）でアブストラクトを日本語に要約・翻訳（「要約→翻訳」の2段階。片方のみの利用も可）
 - **ジャーナル名表示** — Slack投稿に掲載誌名を表示
-- **著者名検索** — `query_authors` で PubMed / arXiv の著者フィールドを直接検索（多数の著者も自動分割で対応）
-- **LLMフィルタリング** — OpenAI / Ollama に加え Gemini に対応
-- **検索の堅牢化** — bioRxiv の間欠的な取りこぼしに対するリトライ、`FILTER_UNEDITED` オプション
+- **著者名検索** — `query_authors` で PubMed / arXiv / bioRxiv の著者を直接検索（多数の著者も自動分割で対応）
+- **LLMフィルタリング** — Claude / OpenAI / Ollama / Gemini に対応。アブストラクトまで読んで判定し、判定理由を記録
+- **Claude + ローカルLLM の分担** — Claude が最終判定、ローカルLLMが一次ふるいと障害時の代行。月間予算ガード付き
+- **検索の堅牢化** — PubMed・arXiv・bioRxiv の API を直接検索（収載の遅れ・公開の遅れで取りこぼさない期間指定）、`FILTER_UNEDITED` オプション
 
 > ⚠️ 日本語の要約・翻訳とジャーナル名表示は **Slack のみ** 対応です。Telegram / Zulip / Mattermost では英語タイトルとリンクのみ表示されます。
 
 ### 🚀 仕組み
-findpapers ライブラリで PubMed・arXiv・bioRxiv を検索し、手動選別または LLM による自動フィルタリングで論文を選別します。選別結果は GoogleスプレッドシートまたはローカルCSVに記録され、Slack等へ通知されます。設定は `config.yml` 1ファイルで完結します。
+PubMed（E-utilities）・arXiv API・bioRxiv API を直接検索し、手動選別または LLM による自動フィルタリングで論文を選別します。選別結果は GoogleスプレッドシートまたはローカルCSVに記録され、Slack等へ通知されます。設定は `config.yml` 1ファイルで完結します。
 
 詳しい変更履歴は末尾の [更新履歴](#-更新履歴) を参照してください。
 
@@ -40,8 +41,10 @@ findpapers ライブラリで PubMed・arXiv・bioRxiv を検索し、手動選�
 - `papers/utils.py` – 翻訳機能 (`translate_abstract`)
 - `papers/slack_papers_formatter.py` – 日本語要約・ジャーナル名の表示
 - `daily_posting.py` – 設定からの翻訳／フィルタオプション読み込み
-- `papers/papers_finder.py` – 翻訳フロー、著者検索（多人数分割）、ジャーナル名抽出、ローカル履歴管理、bioRxiv リトライ、Unedited version フィルタ、findpapers クラッシュ回避パッチ
-- `papers/llm_filtering.py` – Gemini フィルタリング対応
+- `papers/papers_finder.py` – 翻訳フロー、著者検索（多人数分割）、ジャーナル名抽出、ローカル履歴管理、各DBの直接検索、Unedited version フィルタ
+- `papers/search_query.py` – 検索クエリの解釈（PubMed / arXiv の検索式への変換、bioRxiv のローカル照合）
+- `papers/llm_filtering.py` – Claude / Gemini フィルタリング、ローカルLLMの一次ふるい・代行判定
+- `papers/claude_client.py` – Claude API 呼び出し、利用量台帳と月間予算ガード
 
 </details>
 
@@ -74,8 +77,16 @@ pip install .
 
 2. config.ymlの `NCBI_API_KEY` に取得したAPI Keyを貼り付けてください。
 ### LLM連携：いずれかを推奨
-* LLMフィルタリング：OpenAI or Ollama or Gemini
-* アブストラクト翻訳：OpenAI or Ollama or Gemini
+* LLMフィルタリング：Claude or OpenAI or Ollama or Gemini
+* アブストラクト翻訳：Claude or OpenAI or Ollama or Gemini
+#### Claude API（推奨構成）
+1. [Claude Console](https://platform.claude.com/) で API Key を作成し、config.yml の `ANTHROPIC_API_KEY` に貼り付けてください（全工程で共通。環境変数 `ANTHROPIC_API_KEY` でも可）。
+2. 件数は少ないが精度が効く工程を Claude に、件数の多い工程をローカルLLMに任せる構成を推奨します。
+   * `LLM_PROVIDER: "claude"` — フィルタリングの最終判定（20件ずつまとめて判定し、理由も記録）
+   * `SUMMARIZATION_PROVIDER: "claude"` + `TRANSLATION_ENABLED: false` — 日本語の箇条書き要約を1回で生成（ローカルの要約・翻訳モデルの読み込みが不要になる）
+   * `LOCAL_LLM_PROVIDER: "ollama"` — Claude が使えないとき（予算超過・障害）の代行判定。`LOCAL_PREFILTER: true` で Claude の前の一次ふるいにも使う
+3. 支出は `LOCAL_ROOT_DIR/claude_usage.csv` に記録され、全トピック合算で `CLAUDE_MONTHLY_BUDGET_USD`（既定 $100）に達すると、その月は Claude を呼ばずローカルLLMで処理します。
+4. フィルタリングの判定は履歴ファイルの隣の `{履歴ファイル名}_decisions.csv` に理由つきで残ります。プロンプト調整に使ってください。同じ基準で不採用になった論文は、翌日以降に再判定しません。
 #### OpenAI API
 1. [このページ](https://platform.openai.com/settings/organization/api-keys)からOpenAIアカウントにログインし、API Keyを作成してください。
 
@@ -133,16 +144,29 @@ NCBI_API_KEY: "your-ncbi-api-key"
 query_biorxiv: "[machine learning for single-cell] OR [deep learning for single-cell]"
 query_pubmed_arxiv: "([single-cell transcriptomics]) AND ([AI] OR [machine learning])"
 
-# 著者名直接検索（PubMed/arXiv のみ対応。カンマ区切りで複数指定可）
+# 著者名直接検索（PubMed/arXiv/bioRxiv。カンマ区切りで複数指定可）
 # query_authors: "Jane Doe, John Smith"
+# 同姓同名の多い名前は、著者リストの末尾2人にいる論文だけを候補にする（"auto" / 名前のリスト / "off"）
+# AUTHOR_COMMON_NAMES: "auto"
 
 # -----------------------------------------------------------------------------
 # LLMフィルタリング設定 (オプション)
 # -----------------------------------------------------------------------------
 LLM_FILTERING: false
-LLM_PROVIDER: "ollama"            # "ollama", "openai", "gemini"
-LANGUAGE_MODEL: "gpt-oss:20b"     # フィルタリングに使用するモデル
-LLM_API_KEY: ""                   # API使用時のみ
+LLM_PROVIDER: "claude"            # "claude", "ollama", "openai", "gemini"
+LANGUAGE_MODEL: "claude-opus-5-5" # フィルタリングに使用するモデル
+LLM_API_KEY: ""                   # OpenAI/Gemini 使用時のみ（Claude は ANTHROPIC_API_KEY）
+
+# Claude API（LLM_PROVIDER / SUMMARIZATION_PROVIDER / TRANSLATION_PROVIDER が "claude" のとき）
+ANTHROPIC_API_KEY: ""             # 空なら環境変数 ANTHROPIC_API_KEY を使用
+CLAUDE_EFFORT: "low"              # 思考の深さ: low / medium / high
+CLAUDE_BATCH_SIZE: 20             # 1リクエストで判定する論文数
+CLAUDE_MONTHLY_BUDGET_USD: 100    # 全トピック合算の月間上限（超えたらローカルLLMで処理）
+
+# ローカルLLMのサブエージェント（Claude と併用）
+LOCAL_LLM_PROVIDER: "ollama"      # Claude が使えないときの代行判定
+LOCAL_LLM_MODEL: "gemma4:26b"
+LOCAL_PREFILTER: false            # true で Claude の前に一次ふるい（明らかに無関係なものだけ落とす）
 
 FILTERING_PROMPT: |
   "You are a lab manager at a research lab focusing on machine learning methods development for single-cell RNA sequencing. Lab members are interested in developing methods to model cell dynamics. You are reviewing a list of research papers to determine if they are relevant to your lab. Please answer 'yes' or 'no' to the following question: Is the following research paper relevant?"
@@ -152,7 +176,7 @@ FILTERING_PROMPT: |
 # -----------------------------------------------------------------------------
 # 【Step 1: 要約】 (翻訳の前段階として、または要約のみに使用)
 SUMMARIZATION_ENABLED: false
-SUMMARIZATION_PROVIDER: "ollama" # "ollama", "openai", "gemini"
+SUMMARIZATION_PROVIDER: "ollama" # "claude", "ollama", "openai", "gemini"
 SUMMARIZATION_MODEL: "gemma2"    # 要約に使用するモデル
 SUMMARIZATION_API_KEY: ""        # API使用時のみ
 
@@ -162,7 +186,7 @@ SUMMARIZATION_PROMPT: |
 
 # 【Step 2: 翻訳】 (Step 1の結果、または原文を翻訳)
 TRANSLATION_ENABLED: false
-TRANSLATION_PROVIDER: "ollama"                 # "ollama", "openai", "gemini"
+TRANSLATION_PROVIDER: "ollama"                 # "claude", "ollama", "openai", "gemini"
 TRANSLATION_MODEL: "mitmul/plamo-2-translate"  # 翻訳に使用するモデル
 TRANSLATION_API_KEY: ""                        # API使用時のみ
 
@@ -238,6 +262,27 @@ paperbee post --config /path/to/config.yml --since 1 --databases pubmed biorxiv
 ## 📋 更新履歴
 
 <details>
+<summary><b>2026/10/20</b> — Claude API 対応・キーワード検索と bioRxiv 著者検索の修正</summary>
+
+- **Claude API 対応**: `LLM_PROVIDER` / `SUMMARIZATION_PROVIDER` / `TRANSLATION_PROVIDER` に `"claude"` を指定可能。フィルタリングは20件ずつ1リクエストにまとめ、構造化出力で判定と理由を受け取る。安全分類器による誤拒否はサーバー側フォールバックで別モデルが引き継ぐ。
+- **ローカルLLMとの分担**: `LOCAL_LLM_PROVIDER` のローカルLLMが、Claude の障害・予算超過時に判定を代行。`LOCAL_PREFILTER: true` で Claude の前の一次ふるいにも使える。
+- **月間予算ガード**: 利用量を `claude_usage.csv` に記録し、全トピック合算で `CLAUDE_MONTHLY_BUDGET_USD` に達したらその月は Claude を呼ばない。
+- **判定キャッシュと判定ログ**: 判定を `{履歴ファイル名}_decisions.csv` に理由つきで記録。同じ基準で不採用になった論文は、`--since` の期間が重なっても再判定しない。
+- **フィルタリング精度**: ローカルLLMの判定にもアブストラクトを渡すよう変更（従来はタイトル・著者・キーワードのみ）。
+- **bioRxiv 著者検索の修正**: findpapers の bioRxiv 検索はタイトル・アブストラクトしか対象にしないため、`query_biorxiv` に書いた著者名は著者として一致していなかった。`query_authors` の著者を bioRxiv API の新着プレプリントと照合する方式に変更。
+- **ハング対策**: Ollama 呼び出しにタイムアウト（600秒）を設定。応答が止まっても後続トピックの実行が止まらない。ローカルLLMのエラーで実行全体が落ちないようにした。
+- `NCBI_API_KEY` が PubMed 著者検索に渡っていなかった問題を修正。
+- **`FILTER_UNEDITED` が bioRxiv の新着をすべて除外していた問題を修正**: bioRxiv の DOI が `10.64898/` に移行したため、プレプリント除外の対象外判定（`10.1101/` のみ）をすり抜け、CrossRef の参照数0で落とされていた（2026/07/22 以降）。取得元DBと新しい接頭辞で判定するよう変更。
+- 著者名の照合が PubMed 形式（`Theis FJ`）にも対応。
+- **同姓同名ノイズの削減（`AUTHOR_COMMON_NAMES`）**: `"auto"` で、PubMed の過去1年の論文数が多い名前（`Wang B` など）を自動判定し、その名前にしか一致しない論文は著者リストの末尾2人（責任著者側）にいる場合だけ候補にする。biglab の過去30日では候補が1,297件→459件に減り、過去に採用した29件はすべて残った。名前のリストで直接指定、`"off"` で無効化も可能。
+- **キーワード検索の修正（findpapers を廃止）**: bioRxiv と arXiv のキーワード検索が常に0件だった。bioRxiv は findpapers が使う検索画面（medrxiv.org/search）が Cloudflare のボット判定で 403 を返し、arXiv は API の応答形式の変更で findpapers が件数を読めず、例外が握りつぶされていた。3つのDBとも API を直接検索する方式に置き換えた。
+  - **bioRxiv**: 期間内の新着（version 1）を bioRxiv API で全件取得し、`query_biorxiv` をタイトル・アブストラクトにローカルで照合（語の境界で一致、ハイフンは空白扱い、最後の語の複数形も一致）。`([a] OR [b]) AND ([c] OR [d])` の形も使える。取得結果は `LOCAL_ROOT_DIR/biorxiv_cache.json` に6時間保存し、続けて走る他トピックと共有する。
+  - **arXiv**: arXiv API をタイトル・アブストラクト（`ti:` / `abs:`）で検索。投稿から公開まで数日空くため、期間の始まりを4日前に広げる（既読分は履歴と判定キャッシュで除外）。
+  - **PubMed**: E-utilities を直接検索し、期間を出版日ではなく収載日（`[Date - Entrez]`）で切る。出版日より遅れて収載された論文を取りこぼさない。著者検索も同じ。
+
+</details>
+
+<details>
 <summary><b>2026/07/23</b> — findpapersクラッシュ回避</summary>
 
 - **不正レコードによる検索全体クラッシュを回避**: findpapers の `merge_duplications` が、一部の不正なPubMedレコード（`publication_date` が None 等）を含む結果で `AttributeError` を送出し、**検索結果が丸ごと0件**になる問題があった（1件の不正レコードで全論文を取りこぼす）。import時に None 耐性のあるラッパーへ差し替えて回避。重複統合に失敗しても後段のDOI除外・history照合で吸収されるため実害なし。site-packagesを直接書き換えないため再インストールにも強い。
@@ -272,7 +317,7 @@ Slack投稿に掲載誌名を表示。
 
 `query_authors` にカンマ区切りで著者名を指定すると PubMed（`[Author]`）・arXiv（`au:`）を直接検索。キーワード検索（`query_pubmed_arxiv`）と併用可。
 
-⚠️ bioRxiv は非対応。bioRxiv で著者検索する場合は `query_biorxiv` に著者名を直接記述してください。
+※ 2026/10/20 から bioRxiv にも対応（`query_biorxiv` に著者名を書く方法は、著者としては一致しないため不要）。
 
 </details>
 

@@ -20,13 +20,23 @@ LOCAL_ROOT_DIR: "../paperbee_ja/files"
 
 # 検索クエリ設定
 # ─────────────────────────────────────────────
-# 【著者名検索】PubMed と arXiv で著者フィールド（[Author]/au:）を直接検索します。
-# カンマ区切りで著者名を列記してください。
-# ※ bioRxiv の著者検索は query_biorxiv に著者名を書けば動作します。
+# 【著者名検索】PubMed（[Author]）・arXiv（au:）・bioRxiv（API の著者欄）で著者を直接検索します。
+# カンマ区切りで著者名を列記してください（"名 姓" の形式。ミドルネームの頭文字は省略可）。
 query_authors: "Jane Doe, John Smith"
 
-# 【bioRxiv 検索クエリ】著者名を [name] 形式で書けばそのまま著者として機能します。
-# キーワード検索も兼用できます。複雑なクエリには対応していないため単純な OR 検索のみ。
+# 同姓同名の多い著者名の扱い（著者検索）
+# "auto": PubMed で過去1年の論文数が AUTHOR_COMMON_NAME_THRESHOLD を超える名前（"Wang B" など）は別人の論文が
+#         大量に掛かるため、その名前にしか一致しない論文は、著者リストの末尾 AUTHOR_SENIOR_POSITIONS 人
+#         （責任著者側）にいる場合だけ候補にする。論文数は LOCAL_ROOT_DIR/author_pubmed_counts.json に保存し、30日ごとに取り直す
+# 名前のリストで直接指定することも（例: ["Bo Wang", "Jian Ma"]）、"off" で無効にすることもできる
+AUTHOR_COMMON_NAMES: "auto"
+AUTHOR_SENIOR_POSITIONS: 2
+AUTHOR_COMMON_NAME_THRESHOLD: 300
+
+# 【bioRxiv 検索クエリ】タイトル・アブストラクトのキーワード検索です。
+# 著者名を書いても著者としては一致しません（著者検索は query_authors を使ってください）。
+# query_pubmed_arxiv と同じく AND / OR / AND NOT と括弧が使えます。[ ] 内はフレーズとして一致します
+# （ハイフンは空白扱い、最後の語の複数形も一致。"[machine learning omics]" はこの語順のままでないと一致しない）。
 query_biorxiv: "[machine learning for single-cell] OR [deep learning for single-cell] OR [AI for single-cell]"
 
 # 【PubMed/arXiv キーワード検索クエリ】AND, OR, NOT が使用可能。
@@ -44,10 +54,37 @@ FILTER_UNEDITED: false
 # -----------------------------------------------------------------------------
 # LLMフィルタリング設定 (オプション)
 # -----------------------------------------------------------------------------
+# タイトル・誌名・著者・キーワード・アブストラクトを読んで、FILTERING_PROMPT の基準で選別します。
+# 判定は {HISTORY_FILE の名前}_decisions.csv に理由つきで記録され、同じ基準で不採用になった論文は再判定しません。
 LLM_FILTERING: false
-LLM_PROVIDER: "ollama"       # "ollama", "openai", "gemini" のいずれか
-LANGUAGE_MODEL: "gemma2"     # フィルタリングに使用する軽量モデル
-LLM_API_KEY: "your-key"      # OpenAIまたはGemini使用時のAPIキー
+LLM_PROVIDER: "claude"            # "claude", "ollama", "openai", "gemini" のいずれか
+LANGUAGE_MODEL: "claude-opus-5-5" # フィルタリングに使用するモデル（ollama なら例: gemma4:26b）
+LLM_API_KEY: ""                   # OpenAIまたはGemini使用時のAPIキー（Claude は下の ANTHROPIC_API_KEY）
+
+# -----------------------------------------------------------------------------
+# Claude API 設定 (LLM_PROVIDER / SUMMARIZATION_PROVIDER / TRANSLATION_PROVIDER が "claude" のとき)
+# -----------------------------------------------------------------------------
+# 空なら環境変数 ANTHROPIC_API_KEY を使います（cron では環境変数が読まれないことが多いので注意）。
+ANTHROPIC_API_KEY: ""
+# 思考の深さ。"low" で十分なことが多い（"medium", "high" で精度と費用が上がる）
+CLAUDE_EFFORT: "low"
+# フィルタリングで1リクエストにまとめる論文数
+CLAUDE_BATCH_SIZE: 20
+# 月間予算（USD）。LOCAL_ROOT_DIR/claude_usage.csv に記録した推定支出が全トピック合算でこれに達すると、
+# その月は Claude を呼ばずにローカルLLMで処理します。0 で上限なし。
+# 参考単価 (USD / 100万トークン, 入力/出力): claude-opus-5-5 4/20, claude-sonnet-5-5 2/10, claude-haiku-5-5 0.10/0.50
+CLAUDE_MONTHLY_BUDGET_USD: 100
+
+# -----------------------------------------------------------------------------
+# ローカルLLMのサブエージェント (Claude と併用する場合)
+# -----------------------------------------------------------------------------
+# Claude が使えないとき（予算超過・障害・拒否）に、このモデルがフィルタリングの判定を代行します。
+# 未設定だと、その日に判定できなかった論文は投稿されません（--since の範囲内なら翌日に再判定）。
+LOCAL_LLM_PROVIDER: "ollama"      # 現在は "ollama" のみ
+LOCAL_LLM_MODEL: "gemma4:26b"
+# true にすると、Claude の前にこのモデルで一次ふるいをかけ、明らかに無関係な論文だけを落とします。
+# 候補が多いトピック（数十件/日以上）で Claude の費用を抑えたいときに使います。
+LOCAL_PREFILTER: false
 
 # フィルタリング用プロンプト
 FILTERING_PROMPT: |
@@ -61,24 +98,28 @@ FILTERING_PROMPT: |
   Please answer 'yes' or 'no' to the following question: Is the following research paper relevant?
 
 # -----------------------------------------------------------------------------
-# 要約設定 (オプション。翻訳結果の要約)
+# 要約設定 (オプション。Step 1: 英語アブストラクトの要約)
 # -----------------------------------------------------------------------------
-# 翻訳されたテキストを、別のLLMで要約します
+# 【推奨】Claude で日本語の要約を1回で作る場合:
+#   SUMMARIZATION_PROVIDER: "claude", SUMMARIZATION_MODEL: "claude-opus-5-5",
+#   下のプロンプトのまま TRANSLATION_ENABLED: false にする（ローカルの要約・翻訳モデルの読み込みが不要になる）
 SUMMARIZATION_ENABLED: false
-SUMMARIZATION_PROVIDER: "ollama" # "ollama", "openai", "gemini" のいずれか
-SUMMARIZATION_MODEL: ""          # (例: gpt-oss:20b, gpt-4o-mini, gemini-2.5-flash)
+SUMMARIZATION_PROVIDER: "ollama" # "claude", "ollama", "openai", "gemini" のいずれか
+SUMMARIZATION_MODEL: ""          # (例: claude-opus-5-5, gpt-oss:20b, gpt-4o-mini, gemini-2.5-flash)
 SUMMARIZATION_API_KEY: ""        # OpenAIまたはGemini使用時のAPIキー
 
 # 要約用プロンプト
 SUMMARIZATION_PROMPT: |
-  以下の日本語の論文アブストラクトを、専門家向けに重要なポイントを3点の箇条書きで要約してください。
-  出力は要約のみを行ってください。
+  以下の論文アブストラクトを、専門家向けに重要なポイント3点の日本語の箇条書きで要約してください。
+  出力は要約のみとしてください。
+
+  {text}
 
 # -----------------------------------------------------------------------------
 # 日本語翻訳設定 (オプション。PLaMo-2などによる翻訳)
 # -----------------------------------------------------------------------------
 TRANSLATION_ENABLED: false
-TRANSLATION_PROVIDER: "ollama" # "ollama", "openai", "gemini" のいずれか
+TRANSLATION_PROVIDER: "ollama" # "claude", "ollama", "openai", "gemini" のいずれか
 TRANSLATION_MODEL: ""          # 使用するモデル名 (例: mitmul/plamo-2-translate, gpt-4o-mini, gemini-2.5-flash)
 TRANSLATION_API_KEY: ""        # OpenAIまたはGemini使用時のAPIキー
 

@@ -15,6 +15,11 @@ try:
 except ImportError:
     genai = None
 
+from .claude_client import get_client as get_claude_client
+from .claude_client import is_claude_provider
+from .llm_filtering import OLLAMA_TIMEOUT_SECONDS
+
+
 def translate_abstract(text: str, provider: str, model_name: str, api_key: str = "", prompt_template: str = "") -> str:
     if not text or not isinstance(text, str):
         return ""
@@ -27,11 +32,14 @@ def translate_abstract(text: str, provider: str, model_name: str, api_key: str =
 
     try:
         if provider == "ollama":
-            import ollama
-            response = ollama.chat(model=model_name, messages=[
+            client = ollama.Client(timeout=OLLAMA_TIMEOUT_SECONDS)
+            response = client.chat(model=model_name, messages=[
                 {'role': 'user', 'content': prompt},
             ])
             return response['message']['content']
+
+        elif is_claude_provider(provider):
+            return get_claude_client(api_key=api_key, model=model_name).generate_text(prompt)
 
         elif provider == "gemini":
             if genai is None:

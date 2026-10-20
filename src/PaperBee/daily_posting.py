@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import os
 import time
 from typing import Any, List, Optional, Tuple, cast
 
@@ -7,10 +8,30 @@ import yaml
 
 from PaperBee.papers import (
     PapersFinder,
+    claude_client,
     validate_configuration,
     validate_llm_args,
     validate_platform_args,
 )
+from PaperBee.papers.papers_finder import DEFAULT_COMMON_NAME_THRESHOLD
+
+DEFAULT_CLAUDE_MONTHLY_BUDGET_USD = 100.0
+CLAUDE_USAGE_FILE = "claude_usage.csv"
+
+
+def resolve_claude_api_key(config: dict, stage_key_name: str) -> str:
+    """Claude 用の API キーを決める。
+
+    設定ファイルの ANTHROPIC_API_KEY を優先し、無ければ工程別のキー（LLM_API_KEY 等）が Anthropic の
+    キー（sk-ant-）である場合だけ使う。どちらも無ければ空文字を返し、SDK の既定の解決
+    （ANTHROPIC_API_KEY 環境変数 → `ant auth login` のプロファイル）に任せる。
+    工程別のキー欄には Gemini/OpenAI のキーが残っていることが多いため、無条件には流用しない。
+    """
+    key = str(config.get("ANTHROPIC_API_KEY") or "").strip()
+    if key:
+        return key
+    stage_key = str(config.get(stage_key_name) or "").strip()
+    return stage_key if stage_key.startswith("sk-ant-") else ""
 
 
 def load_config(config_path: str) -> dict[Any, Any]:
@@ -64,16 +85,40 @@ async def daily_papers_search(
     if llm_filtering:
         # OPENAI_API_KEY -> llm_api_key に変更
         filtering_prompt, LLM_PROVIDER, LANGUAGE_MODEL, llm_api_key = validate_llm_args(config, root_dir)
+        if claude_client.is_claude_provider(LLM_PROVIDER):
+            llm_api_key = resolve_claude_api_key(config, "LLM_API_KEY")
     else:
         filtering_prompt = ""
         LLM_PROVIDER = ""
         LANGUAGE_MODEL = ""
         llm_api_key = ""
 
+    # ローカルLLMのサブエージェント。Claude が使えないときの代行判定と、任意で一次ふるいを担う
+    local_provider = str(config.get("LOCAL_LLM_PROVIDER") or "").lower()
+    local_model = str(config.get("LOCAL_LLM_MODEL") or "")
+    use_prefilter = bool(config.get("LOCAL_PREFILTER", False))
+
+    # 著者検索で同姓同名の多い名前の扱い（"auto" / 名前のリスト / "off"）。未設定なら従来どおり絞らない
+    author_common_names = config.get("AUTHOR_COMMON_NAMES", "off") or "off"
+    author_senior_positions = int(config.get("AUTHOR_SENIOR_POSITIONS", 2))
+    author_common_threshold = int(config.get("AUTHOR_COMMON_NAME_THRESHOLD", DEFAULT_COMMON_NAME_THRESHOLD))
+    claude_batch_size = int(config.get("CLAUDE_BATCH_SIZE") or 20)
+
+    history_file = str(config.get("HISTORY_FILE", "history.csv"))
+    # Claude の利用量台帳は LOCAL_ROOT_DIR 直下で全トピック共有（月間予算は合算で管理）
+    claude_client.configure(
+        ledger_path=os.path.join(root_dir, CLAUDE_USAGE_FILE),
+        monthly_budget_usd=float(config.get("CLAUDE_MONTHLY_BUDGET_USD", DEFAULT_CLAUDE_MONTHLY_BUDGET_USD) or 0),
+        tag=os.path.splitext(os.path.basename(history_file))[0],
+        effort=str(config.get("CLAUDE_EFFORT", claude_client.DEFAULT_EFFORT) or ""),
+    )
+
     translation_enabled = config.get("TRANSLATION_ENABLED", False)
     translation_provider = str(config.get("TRANSLATION_PROVIDER", "ollama")).lower()
     translation_model = str(config.get("TRANSLATION_MODEL", "gemma2"))
     translation_api_key = str(config.get("TRANSLATION_API_KEY", ""))
+    if claude_client.is_claude_provider(translation_provider):
+        translation_api_key = resolve_claude_api_key(config, "TRANSLATION_API_KEY")
 
     default_prompt = "Translate the following scientific abstract into natural Japanese. Output ONLY the Japanese translation:\n\n{text}"
     translation_prompt = str(config.get("TRANSLATION_PROMPT", default_prompt))
@@ -82,9 +127,10 @@ async def daily_papers_search(
     summarization_provider = str(config.get("SUMMARIZATION_PROVIDER", "ollama")).lower()
     summarization_model = str(config.get("SUMMARIZATION_MODEL", "gemma2"))
     summarization_api_key = str(config.get("SUMMARIZATION_API_KEY", "")) # 必要なら
+    if claude_client.is_claude_provider(summarization_provider):
+        summarization_api_key = resolve_claude_api_key(config, "SUMMARIZATION_API_KEY")
     summarization_prompt = str(config.get("SUMMARIZATION_PROMPT", "以下のテキストを日本語で3点の箇条書きに要約してください。:\n\n{text}"))
 
-    history_file = str(config.get("HISTORY_FILE", "history.csv"))
     filter_unedited = bool(config.get("FILTER_UNEDITED", False))
 
     finder = PapersFinder(
@@ -98,13 +144,21 @@ async def daily_papers_search(
         query_biorxiv=query_biorxiv,
         query_pubmed_arxiv=query_pubmed_arxiv,
         query_authors=query_authors,
+        author_common_names=author_common_names,
+        author_senior_positions=author_senior_positions,
+        author_common_threshold=author_common_threshold,
         interactive=interactive,
         llm_filtering=llm_filtering,
         filtering_prompt=filtering_prompt,
         llm_provider=LLM_PROVIDER,
         model=LANGUAGE_MODEL,
         llm_api_key=llm_api_key, # Renamed
+        local_provider=local_provider,
+        local_model=local_model,
+        use_prefilter=use_prefilter,
+        claude_batch_size=claude_batch_size,
         filter_unedited=filter_unedited,
+        ncbi_api_key=str(config.get("NCBI_API_KEY", "")),
         slack_bot_token=slack_args["bot_token"],
         slack_channel_id=slack_args["channel_id"],
         telegram_bot_token=telegram_args["bot_token"],
@@ -134,6 +188,10 @@ async def daily_papers_search(
         post_to_zulip=zulip_args["is_posting_on"],
         post_to_mattermost=mattermost_args["is_posting_on"],
     )
+
+    usage = claude_client.usage_summary()
+    if usage:
+        print(usage)
 
     return papers, response_slack, response_telegram, response_zulip, response_mattermost
 
