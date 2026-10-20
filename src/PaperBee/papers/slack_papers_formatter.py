@@ -34,12 +34,14 @@ class SlackPaperPublisher:
     @staticmethod
     def format_papers_for_slack(
         papers_list: List[List[str]],
+        reasons: Optional[Dict[str, str]] = None,
     ) -> Tuple[List[str], List[str]]:
         """
         Formats a list of papers into separate lists for regular papers and preprints with Slack message formatting.
 
         Args:
             papers_list (List[List[str]]): A list of papers, where each paper is a list of Args.
+            reasons (Optional[Dict[str, str]]): 小文字の DOI → LLM の採用理由。あれば誌名の下に添える。
 
         Returns:
             Tuple[List[str], List[str]]: Two lists, one for regular papers and one for preprints, each formatted for Slack.
@@ -54,9 +56,13 @@ class SlackPaperPublisher:
             abstract_jp = re.sub(r'\*\*(.+?)\*\*', r'*\1*', paper[8] if len(paper) > 8 else "")
             url = paper[-1]
 
+            reason = (reasons or {}).get(str(paper[0]).strip().lower(), "")
+
             formatted_paper = f"{emoji} <{url}|{title}>"
             if journal:
                 formatted_paper += f"\n> *{journal}*"
+            if reason:
+                formatted_paper += f"\n> :bulb: {reason}"
             if abstract_jp:
                 formatted_paper += f"\n> {abstract_jp}"
             if paper[3] == "TRUE":

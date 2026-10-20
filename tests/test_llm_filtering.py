@@ -51,7 +51,7 @@ def _make_filter(monkeypatch, df, fake_claude, local_answer=None, prefilter=True
     )
     local_calls = []
 
-    def fake_ask(provider, client, model, system, message):
+    def fake_ask(provider, client, model, system, message, json_schema=None):
         local_calls.append((system, message))
         return local_answer(system, message)
 
@@ -177,3 +177,40 @@ def test_answer_without_yes_or_no_is_unjudged(monkeypatch):
     assert llm_filter.filter_articles().empty
     # 不採用（キャッシュ対象）ではなく判定不能として残り、次回の実行で判定し直される
     assert llm_filter.decisions[0] == (False, "unjudged", "no yes/no in answer")
+
+
+def test_parse_judgment_reads_json_or_falls_back_to_yes_no():
+    from PaperBee.papers.llm_filtering import parse_judgment
+
+    assert parse_judgment('{"relevant": true, "reason": "Theis 研の新手法"}') == (True, "Theis 研の新手法")
+    assert parse_judgment('```json\n{"relevant": false, "reason": "臨床研究"}\n```') == (False, "臨床研究")
+    assert parse_judgment("Yes.") == (True, "")  # JSON で返らなくても判定は読む
+    assert parse_judgment('{"relevant": "maybe"}') is None
+    assert parse_judgment("") is None
+
+
+def test_local_final_judge_returns_reason_with_json_schema(monkeypatch):
+    calls = []
+
+    class FakeOllama:
+        def chat(self, model, messages, format=None):
+            calls.append((messages[0]["content"], format))
+            return {"message": {"content": '{"relevant": true, "reason": "Theis 研の生成モデル"}'}}
+
+    monkeypatch.setattr(LLMFilter, "_make_client", staticmethod(lambda provider, key: FakeOllama()))
+    llm_filter = LLMFilter(_df(["good A"]), llm_provider="ollama", model="gemma4:26b", filtering_prompt="c", with_reason=True)
+
+    assert len(llm_filter.filter_articles()) == 1
+    assert llm_filter.decisions[0] == (True, "ollama", "Theis 研の生成モデル")
+    system, schema = calls[0]
+    assert "Japanese" in system and schema == llm_filtering.JUDGMENT_SCHEMA
+
+
+def test_prefilter_stays_single_word_without_schema(monkeypatch):
+    df = _df(["good A"])
+    fake = FakeClaude()
+    llm_filter, local_calls = _make_filter(monkeypatch, df, fake, lambda s, m: "yes")
+    llm_filter.with_reason = True
+    llm_filter.filter_articles()
+    # 一次ふるいは速度優先で yes/no の1語のまま（理由は求めない）
+    assert all("JSON" not in system for system, _ in local_calls)

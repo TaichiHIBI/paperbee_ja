@@ -56,6 +56,9 @@ FILTER_UNEDITED: false
 # -----------------------------------------------------------------------------
 # タイトル・誌名・著者・キーワード・アブストラクトを読んで、FILTERING_PROMPT の基準で選別します。
 # 判定は {HISTORY_FILE の名前}_decisions.csv に理由つきで記録され、同じ基準で不採用になった論文は再判定しません。
+# API を使わない場合（すべてローカルLLM）: LLM_PROVIDER: "ollama"、LANGUAGE_MODEL: "gemma4:26b" などにし、
+# 下の要約・翻訳も "ollama" にする。Claude API 設定とローカルLLMのサブエージェント設定は不要。
+# 採用理由（SLACK_SHOW_REASON）はローカルLLMでも表示される（JSON で yes/no と理由を返させる）。
 LLM_FILTERING: false
 LLM_PROVIDER: "claude"            # "claude", "ollama", "openai", "gemini" のいずれか
 LANGUAGE_MODEL: "claude-opus-5-5" # フィルタリングに使用するモデル（ollama なら例: gemma4:26b）
@@ -132,6 +135,8 @@ TRANSLATION_PROMPT: |
 # -----------------------------------------------------------------------------
 # Slack設定 (日本語要約対応)
 # -----------------------------------------------------------------------------
+# フィルタリングで LLM が返した採用理由（日本語）を、各論文の誌名の下に「:bulb: 理由」として添える
+SLACK_SHOW_REASON: true
 SLACK:
   is_posting_on: true
   bot_token: "your_slack_bot_token"

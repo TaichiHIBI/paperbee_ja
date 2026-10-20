@@ -214,3 +214,33 @@ def test_common_names_from_list_or_off(tmp_path):
     assert _finder(tmp_path, author_common_names=["Bo Wang"], author_senior_positions=0)._resolve_common_name_keys(
         authors
     ) == set()
+
+
+def test_slack_format_adds_reason_under_journal():
+    from PaperBee.papers.slack_papers_formatter import SlackPaperPublisher
+
+    row = ["10.1/ABC", "2026-10-20", "2026-10-19", "FALSE", "Title", "Nature Methods", "", "", "- 要点", "https://doi.org/10.1/ABC"]
+    papers, _ = SlackPaperPublisher.format_papers_for_slack([row], reasons={"10.1/abc": "Theis 研の新手法"})
+    assert papers[0] == (
+        ":rolled_up_newspaper: <https://doi.org/10.1/ABC|Title>\n> *Nature Methods*\n> :bulb: Theis 研の新手法\n> - 要点"
+    )
+    # 理由が無ければ従来どおり
+    papers, _ = SlackPaperPublisher.format_papers_for_slack([row])
+    assert ":bulb:" not in papers[0]
+
+
+def test_llm_reasons_are_kept_only_for_adopted_papers(tmp_path, monkeypatch):
+    class FakeFilter:
+        def __init__(self, df, **kwargs):
+            self.df = df
+            self.decisions = {}
+
+        def filter_articles(self):
+            for index, row in self.df.iterrows():
+                self.decisions[index] = ("keep" in row["Title"], "claude", f"reason for {row['Title']}")
+            return self.df[self.df["Title"].str.contains("keep")]
+
+    monkeypatch.setattr(papers_finder, "LLMFilter", FakeFilter)
+    finder = _finder(tmp_path, llm_filtering=True, llm_provider="claude", model="claude-opus-5-5", filtering_prompt="c")
+    finder._apply_llm_filter(pd.DataFrame({"DOI": ["10.1/KEEP", "10.1/drop"], "Title": ["keep me", "drop me"]}))
+    assert finder.llm_reasons == {"10.1/keep": "reason for keep me"}

@@ -273,6 +273,7 @@ class PapersFinder:
         local_model: str = "",
         use_prefilter: bool = False,
         claude_batch_size: int = 20,
+        slack_show_reason: bool = True,
         filter_unedited: bool = False,
         slack_bot_token: str = "",
         slack_channel_id: str = "",
@@ -344,6 +345,9 @@ class PapersFinder:
         self.local_model: str = local_model or ""
         self.use_prefilter: bool = use_prefilter
         self.claude_batch_size: int = claude_batch_size
+        # LLM が採用理由を返した論文（小文字の DOI → 理由）。Slack 投稿に添える
+        self.slack_show_reason: bool = slack_show_reason
+        self.llm_reasons: Dict[str, str] = {}
         self.filter_unedited: bool = filter_unedited
         # Messaging platforms
         self.slack_bot_token: str = slack_bot_token
@@ -1088,8 +1092,12 @@ class PapersFinder:
             local_model=self.local_model,
             use_prefilter=self.use_prefilter,
             claude_batch_size=self.claude_batch_size,
+            with_reason=self.slack_show_reason,
         )
         kept = llm_filter.filter_articles()
+        for index, (relevant, _, reason) in llm_filter.decisions.items():
+            if relevant and reason:
+                self.llm_reasons[str(to_judge.at[index, "DOI"]).strip().lower()] = reason
 
         new_rows = [
             {
@@ -1187,7 +1195,8 @@ class PapersFinder:
             Logger("SlackPaperPublisher"),
             channel_id=self.slack_channel_id,
         )
-        papers_pub, preprints = self.slack_publisher.format_papers_for_slack(papers)
+        reasons = self.llm_reasons if self.slack_show_reason else None
+        papers_pub, preprints = self.slack_publisher.format_papers_for_slack(papers, reasons=reasons)
         response = self.slack_publisher.publish_papers_to_slack(
             papers_pub, preprints, self.today_str, self.spreadsheet_id
         )

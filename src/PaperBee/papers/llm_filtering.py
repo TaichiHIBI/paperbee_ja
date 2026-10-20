@@ -1,3 +1,4 @@
+import json
 import re
 import time
 from typing import Any, Dict, List, Optional, Tuple
@@ -29,7 +30,21 @@ PREFILTER_INSTRUCTIONS = (
     "If it might be relevant, or you are unsure, answer 'yes'. Answer with a single word: yes or no."
 )
 
+# 最終判定・代行判定で理由も求めるときの指示と出力形式。プロバイダーに依らず (yes/no, 理由) を得るため。
+# Ollama では JSON スキーマで出力を縛り、OpenAI・Gemini では指示だけで求める（JSON でなければ yes/no を読む）
+REASON_INSTRUCTIONS = (
+    'Respond only with a JSON object of the form {"relevant": true or false, "reason": "..."}. '
+    "Set relevant to your yes/no answer, and write reason as one short Japanese sentence (under 60 characters) "
+    "naming the deciding factor, such as the lab and the methodological contribution."
+)
+JUDGMENT_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "properties": {"relevant": {"type": "boolean"}, "reason": {"type": "string"}},
+    "required": ["relevant", "reason"],
+}
+
 _YES_NO = re.compile(r"\b(yes|no)\b", re.IGNORECASE)
+_JSON_OBJECT = re.compile(r"\{.*\}", re.DOTALL)
 
 
 def parse_yes_no(content: Optional[str]) -> Optional[bool]:
@@ -40,6 +55,22 @@ def parse_yes_no(content: Optional[str]) -> Optional[bool]:
     if match is None:
         return None
     return match.group(1).lower() == "yes"
+
+
+def parse_judgment(content: Optional[str]) -> Optional[Tuple[bool, str]]:
+    """LLM の回答を (relevant, 理由) にする。JSON で返っていれば理由も読み、そうでなければ yes/no だけを読む。"""
+    if not content:
+        return None
+    match = _JSON_OBJECT.search(content)
+    if match:
+        try:
+            data = json.loads(match.group(0))
+        except ValueError:
+            data = None
+        if isinstance(data, dict) and isinstance(data.get("relevant"), bool):
+            return data["relevant"], str(data.get("reason") or "").strip()
+    verdict = parse_yes_no(content)
+    return None if verdict is None else (verdict, "")
 
 
 def _shorten_authors(authors: str) -> str:
@@ -101,6 +132,7 @@ class LLMFilter:
         local_model (str): ローカルLLMのモデル名。
         use_prefilter (bool): 最終判定の前にローカルLLMで一次ふるいをかけるか。
         claude_batch_size (int): Claude に1リクエストでまとめて渡す論文数。
+        with_reason (bool): Claude 以外の最終判定・代行判定でも採用理由を求めるか（Claude は常に理由を返す）。
     """
 
     def __init__(
@@ -114,8 +146,10 @@ class LLMFilter:
         local_model: str = "",
         use_prefilter: bool = False,
         claude_batch_size: int = 20,
+        with_reason: bool = False,
     ) -> None:
         self.df: pd.DataFrame = df
+        self.with_reason: bool = with_reason
         self.llm_provider: str = llm_provider.lower()
         self.model: str = model
         self.filtering_prompt: str = filtering_prompt
@@ -157,11 +191,14 @@ class LLMFilter:
         return format_paper_for_llm(self.df.loc[index])
 
     @staticmethod
-    def _ask(provider: str, client: Any, model: str, system: str, message: str) -> Optional[str]:
+    def _ask(
+        provider: str, client: Any, model: str, system: str, message: str, json_schema: Optional[Dict[str, Any]] = None
+    ) -> Optional[str]:
         if provider == "ollama":
             response = client.chat(
                 model=model,
                 messages=[{"role": "system", "content": system}, {"role": "user", "content": message}],
+                format=json_schema,
             )
             return str(response["message"]["content"])
         if provider == "openai":
@@ -172,16 +209,20 @@ class LLMFilter:
             content = response.choices[0].message.content
             return None if content is None else str(content)
         if provider == "gemini":
-            prompt_text = f"{system}\n\nTask: Based on the title and abstract, answer 'yes' or 'no'.\n\n{message}"
+            task = "respond with the JSON object described above" if json_schema else "answer 'yes' or 'no'"
+            prompt_text = f"{system}\n\nTask: Based on the title and abstract, {task}.\n\n{message}"
             response = client.models.generate_content(model=model, contents=prompt_text)
             return None if response.text is None else str(response.text)
         e = f"Invalid client type or provider mismatch: {provider}"
         raise TypeError(e)
 
-    def _ask_safely(self, provider: str, client: Any, model: str, system: str, message: str) -> Optional[str]:
+    def _ask_safely(
+        self, provider: str, client: Any, model: str, system: str, message: str,
+        json_schema: Optional[Dict[str, Any]] = None,
+    ) -> Optional[str]:
         """1件の問い合わせ。失敗しても実行全体は止めず None を返す。"""
         try:
-            return self._ask(provider, client, model, system, message)
+            return self._ask(provider, client, model, system, message, json_schema)
         except Exception as e:
             print(f"  [{provider}:{model}] 問い合わせ失敗: {type(e).__name__}: {e}")
             return None
@@ -190,14 +231,17 @@ class LLMFilter:
                 time.sleep(0.5)  # リモートAPIのレート制限対策（ローカルの Ollama は待たない）
 
     def _judge_locally(self, index: Any, provider: str, client: Any, model: str, stage: str) -> None:
-        answer = self._ask_safely(provider, client, model, self.filtering_prompt, self._paper_text(index))
-        verdict = parse_yes_no(answer)
-        if verdict is None:
+        system, schema = self.filtering_prompt, None
+        if self.with_reason:
+            system, schema = f"{self.filtering_prompt}\n\n{REASON_INSTRUCTIONS}", JUDGMENT_SCHEMA
+        answer = self._ask_safely(provider, client, model, system, self._paper_text(index), schema)
+        judgment = parse_judgment(answer)
+        if judgment is None:
             # 判定できなかった論文は不採用として記録しない（キャッシュされず、次回の実行で判定し直す）
             reason = f"{provider} error" if answer is None else "no yes/no in answer"
             self.decisions[index] = (False, "unjudged", reason)
         else:
-            self.decisions[index] = (verdict, stage, "")
+            self.decisions[index] = (judgment[0], stage, judgment[1])
 
     def _prefilter(self, indices: List[Any]) -> List[Any]:
         system = f"{self.filtering_prompt}\n\n{PREFILTER_INSTRUCTIONS}"

@@ -87,6 +87,19 @@ pip install .
    * `LOCAL_LLM_PROVIDER: "ollama"` — Claude が使えないとき（予算超過・障害）の代行判定。`LOCAL_PREFILTER: true` で Claude の前の一次ふるいにも使う
 3. 支出は `LOCAL_ROOT_DIR/claude_usage.csv` に記録され、全トピック合算で `CLAUDE_MONTHLY_BUDGET_USD`（既定 $100）に達すると、その月は Claude を呼ばずローカルLLMで処理します。
 4. フィルタリングの判定は履歴ファイルの隣の `{履歴ファイル名}_decisions.csv` に理由つきで残ります。プロンプト調整に使ってください。同じ基準で不採用になった論文は、翌日以降に再判定しません。
+
+#### API を使わない構成（ローカルLLMのみ）
+Claude API はなくても動きます。`LLM_PROVIDER` / `SUMMARIZATION_PROVIDER` / `TRANSLATION_PROVIDER` を `"ollama"` にし、`ANTHROPIC_API_KEY` や `LOCAL_LLM_*` は設定不要です。
+
+| 機能 | Claude | ローカルLLM（Ollama） |
+|---|---|---|
+| フィルタリング（アブストラクトまで読む） | 20件ずつまとめて判定 | 1件ずつ判定 |
+| 採用理由の Slack 表示・判定ログ | ✓ | ✓（JSON スキーマで yes/no と理由を返させる） |
+| 判定キャッシュ・同姓同名ルール・検索 | ✓ | ✓（LLM に依存しない） |
+| 月間予算ガード | ✓ | 不要 |
+| 障害時の代行 | ローカルLLMが代行 | ― |
+
+gemma4 などの思考するモデルは、回答が yes/no の1語でも内部で数百トークン推論するため、1件あたり20秒前後かかります（M4 Pro / 24GB の実測）。
 #### OpenAI API
 1. [このページ](https://platform.openai.com/settings/organization/api-keys)からOpenAIアカウントにログインし、API Keyを作成してください。
 
@@ -269,6 +282,7 @@ paperbee post --config /path/to/config.yml --since 1 --databases pubmed biorxiv
 - **月間予算ガード**: 利用量を `claude_usage.csv` に記録し、全トピック合算で `CLAUDE_MONTHLY_BUDGET_USD` に達したらその月は Claude を呼ばない。
 - **判定キャッシュと判定ログ**: 判定を `{履歴ファイル名}_decisions.csv` に理由つきで記録。同じ基準で不採用になった論文は、`--since` の期間が重なっても再判定しない。
 - **フィルタリング精度**: ローカルLLMの判定にもアブストラクトを渡すよう変更（従来はタイトル・著者・キーワードのみ）。
+- **採用理由の表示（`SLACK_SHOW_REASON`、既定 true）**: LLM が判定時に返す日本語の採用理由を、Slack 投稿の誌名の下に `:bulb:` で添える。Claude だけでなくローカルLLM（Ollama は JSON スキーマで出力を縛る）でも動く。
 - **bioRxiv 著者検索の修正**: findpapers の bioRxiv 検索はタイトル・アブストラクトしか対象にしないため、`query_biorxiv` に書いた著者名は著者として一致していなかった。`query_authors` の著者を bioRxiv API の新着プレプリントと照合する方式に変更。
 - **ハング対策**: Ollama 呼び出しにタイムアウト（600秒）を設定。応答が止まっても後続トピックの実行が止まらない。ローカルLLMのエラーで実行全体が落ちないようにした。
 - `NCBI_API_KEY` が PubMed 著者検索に渡っていなかった問題を修正。

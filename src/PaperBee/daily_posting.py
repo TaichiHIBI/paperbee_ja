@@ -103,6 +103,8 @@ async def daily_papers_search(
     author_senior_positions = int(config.get("AUTHOR_SENIOR_POSITIONS", 2))
     author_common_threshold = int(config.get("AUTHOR_COMMON_NAME_THRESHOLD", DEFAULT_COMMON_NAME_THRESHOLD))
     claude_batch_size = int(config.get("CLAUDE_BATCH_SIZE") or 20)
+    # LLM の採用理由を Slack 投稿に添えるか（理由を返すのは Claude の判定のみ）
+    slack_show_reason = bool(config.get("SLACK_SHOW_REASON", True))
 
     history_file = str(config.get("HISTORY_FILE", "history.csv"))
     # Claude の利用量台帳は LOCAL_ROOT_DIR 直下で全トピック共有（月間予算は合算で管理）
@@ -157,6 +159,7 @@ async def daily_papers_search(
         local_model=local_model,
         use_prefilter=use_prefilter,
         claude_batch_size=claude_batch_size,
+        slack_show_reason=slack_show_reason,
         filter_unedited=filter_unedited,
         ncbi_api_key=str(config.get("NCBI_API_KEY", "")),
         slack_bot_token=slack_args["bot_token"],

@@ -54,7 +54,7 @@ FILTER_SYSTEM_PROMPT = """You screen newly published research papers for a resea
 {criteria}
 </criteria>
 
-The user message contains several papers, each wrapped in a <paper id="..."> tag. Judge each paper on its own against the criteria. Base the decision mainly on the title and abstract, and use the journal, authors and keywords as supporting evidence. If the criteria ask for a yes/no answer, give that answer as `relevant`. For each paper, add a reason of one short sentence (under 25 words). Return exactly one decision for every paper id."""
+The user message contains several papers, each wrapped in a <paper id="..."> tag. Judge each paper on its own against the criteria. Base the decision mainly on the title and abstract, and use the journal, authors and keywords as supporting evidence. If the criteria ask for a yes/no answer, give that answer as `relevant`. For each paper, give the reason as one short Japanese sentence (under 60 characters) naming the deciding factor, such as the lab and the methodological contribution; it is shown to readers next to each selected paper. Return exactly one decision for every paper id."""
 
 
 class BudgetExceededError(RuntimeError):
