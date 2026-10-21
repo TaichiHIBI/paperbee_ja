@@ -19,19 +19,39 @@ DEFAULT_CLAUDE_MONTHLY_BUDGET_USD = 100.0
 CLAUDE_USAGE_FILE = "claude_usage.csv"
 
 
-def resolve_claude_api_key(config: dict, stage_key_name: str) -> str:
-    """Claude 用の API キーを決める。
+_warned_legacy_key = False
 
-    設定ファイルの ANTHROPIC_API_KEY を優先し、無ければ工程別のキー（LLM_API_KEY 等）が Anthropic の
-    キー（sk-ant-）である場合だけ使う。どちらも無ければ空文字を返し、SDK の既定の解決
-    （ANTHROPIC_API_KEY 環境変数 → `ant auth login` のプロファイル）に任せる。
-    工程別のキー欄には Gemini/OpenAI のキーが残っていることが多いため、無条件には流用しない。
+
+def _normalize_provider(provider: str) -> str:
+    provider = str(provider or "").strip().lower()
+    return "claude" if claude_client.is_claude_provider(provider) else provider
+
+
+def resolve_api_key(config: dict, key_name: str, provider: str) -> str:
+    """工程（判定・要約・翻訳）で使う API キーを決める。
+
+    1. その工程のキー欄（LLM_API_KEY / SUMMARIZATION_API_KEY / TRANSLATION_API_KEY）
+    2. 空欄で、その工程のプロバイダーが判定（LLM_PROVIDER）と同じなら LLM_API_KEY
+    3. それでも空なら空文字を返し、各 SDK の既定の解決（ANTHROPIC_API_KEY・OPENAI_API_KEY などの環境変数）に任せる
+
+    キー欄には、その工程のプロバイダーのキーを書く（プロバイダーを替えたらキーも替える）。ollama はキー不要。
+    2026/10/20 版で足した ANTHROPIC_API_KEY 欄は非推奨。Claude の工程では当面それを優先し、警告を出す。
     """
-    key = str(config.get("ANTHROPIC_API_KEY") or "").strip()
-    if key:
+    global _warned_legacy_key
+    provider = _normalize_provider(provider)
+    if provider == "claude":
+        legacy = str(config.get("ANTHROPIC_API_KEY") or "").strip()
+        if legacy:
+            if not _warned_legacy_key:
+                print("警告: 設定の ANTHROPIC_API_KEY は非推奨です。LLM_API_KEY などの工程別のキー欄に移してください")
+                _warned_legacy_key = True
+            return legacy
+    key = str(config.get(key_name) or "").strip()
+    if key or key_name == "LLM_API_KEY":
         return key
-    stage_key = str(config.get(stage_key_name) or "").strip()
-    return stage_key if stage_key.startswith("sk-ant-") else ""
+    if provider == _normalize_provider(config.get("LLM_PROVIDER", "")):
+        return str(config.get("LLM_API_KEY") or "").strip()
+    return ""
 
 
 def load_config(config_path: str) -> dict[Any, Any]:
@@ -84,9 +104,8 @@ async def daily_papers_search(
     llm_filtering = config.get("LLM_FILTERING", False)
     if llm_filtering:
         # OPENAI_API_KEY -> llm_api_key に変更
-        filtering_prompt, LLM_PROVIDER, LANGUAGE_MODEL, llm_api_key = validate_llm_args(config, root_dir)
-        if claude_client.is_claude_provider(LLM_PROVIDER):
-            llm_api_key = resolve_claude_api_key(config, "LLM_API_KEY")
+        filtering_prompt, LLM_PROVIDER, LANGUAGE_MODEL, _ = validate_llm_args(config, root_dir)
+        llm_api_key = resolve_api_key(config, "LLM_API_KEY", LLM_PROVIDER)
     else:
         filtering_prompt = ""
         LLM_PROVIDER = ""
@@ -103,7 +122,7 @@ async def daily_papers_search(
     author_senior_positions = int(config.get("AUTHOR_SENIOR_POSITIONS", 2))
     author_common_threshold = int(config.get("AUTHOR_COMMON_NAME_THRESHOLD", DEFAULT_COMMON_NAME_THRESHOLD))
     claude_batch_size = int(config.get("CLAUDE_BATCH_SIZE") or 20)
-    # LLM の採用理由を Slack 投稿に添えるか（理由を返すのは Claude の判定のみ）
+    # LLM の採用理由を Slack 投稿に添えるか
     slack_show_reason = bool(config.get("SLACK_SHOW_REASON", True))
 
     history_file = str(config.get("HISTORY_FILE", "history.csv"))
@@ -118,9 +137,7 @@ async def daily_papers_search(
     translation_enabled = config.get("TRANSLATION_ENABLED", False)
     translation_provider = str(config.get("TRANSLATION_PROVIDER", "ollama")).lower()
     translation_model = str(config.get("TRANSLATION_MODEL", "gemma2"))
-    translation_api_key = str(config.get("TRANSLATION_API_KEY", ""))
-    if claude_client.is_claude_provider(translation_provider):
-        translation_api_key = resolve_claude_api_key(config, "TRANSLATION_API_KEY")
+    translation_api_key = resolve_api_key(config, "TRANSLATION_API_KEY", translation_provider)
 
     default_prompt = "Translate the following scientific abstract into natural Japanese. Output ONLY the Japanese translation:\n\n{text}"
     translation_prompt = str(config.get("TRANSLATION_PROMPT", default_prompt))
@@ -128,9 +145,7 @@ async def daily_papers_search(
     summarization_enabled = config.get("SUMMARIZATION_ENABLED", False)
     summarization_provider = str(config.get("SUMMARIZATION_PROVIDER", "ollama")).lower()
     summarization_model = str(config.get("SUMMARIZATION_MODEL", "gemma2"))
-    summarization_api_key = str(config.get("SUMMARIZATION_API_KEY", "")) # 必要なら
-    if claude_client.is_claude_provider(summarization_provider):
-        summarization_api_key = resolve_claude_api_key(config, "SUMMARIZATION_API_KEY")
+    summarization_api_key = resolve_api_key(config, "SUMMARIZATION_API_KEY", summarization_provider)
     summarization_prompt = str(config.get("SUMMARIZATION_PROMPT", "以下のテキストを日本語で3点の箇条書きに要約してください。:\n\n{text}"))
 
     filter_unedited = bool(config.get("FILTER_UNEDITED", False))

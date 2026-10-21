@@ -91,6 +91,7 @@ def test_judge_papers_request_shape_and_parsing(tmp_path):
     )
 
     result = client.judge_papers("Only methods papers.", [(0, "Title: A"), (1, "Title: B")])
+    assert client.last_model == "claude-opus-5-5"
 
     assert result[0].relevant is True
     assert result[1].relevant is False
@@ -129,6 +130,7 @@ def test_authentication_error_is_permanent():
     with pytest.raises(ClaudeCallError) as info:
         client.generate_text("Summarize")
     assert info.value.permanent is True
+    assert "LLM_API_KEY" in str(info.value)  # どのキー欄を確認すべきかを示す
 
 
 def test_translate_abstract_dispatches_to_claude(monkeypatch):
@@ -200,3 +202,28 @@ def test_usage_summary_survives_unreadable_ledger(tmp_path):
         assert "不明" in claude_client.usage_summary()
     finally:
         claude_client.configure()
+
+
+
+@pytest.mark.parametrize(
+    ("config", "key_name", "provider", "expected"),
+    [
+        # 工程のキー欄があればそれ
+        ({"LLM_PROVIDER": "claude", "LLM_API_KEY": "k-llm", "SUMMARIZATION_API_KEY": "k-sum"}, "SUMMARIZATION_API_KEY", "claude", "k-sum"),
+        # 空欄で判定と同じプロバイダーなら LLM_API_KEY を使い回す（Claude 以外も同じ規則）
+        ({"LLM_PROVIDER": "claude", "LLM_API_KEY": "k-llm", "SUMMARIZATION_API_KEY": ""}, "SUMMARIZATION_API_KEY", "claude", "k-llm"),
+        ({"LLM_PROVIDER": "openai", "LLM_API_KEY": "k-oa"}, "TRANSLATION_API_KEY", "openai", "k-oa"),
+        # 判定と違うプロバイダーなら使い回さない（空 → SDK の環境変数に任せる）
+        ({"LLM_PROVIDER": "ollama", "LLM_API_KEY": "old-gemini-key"}, "SUMMARIZATION_API_KEY", "claude", ""),
+        ({"LLM_PROVIDER": "claude", "LLM_API_KEY": "k-llm"}, "TRANSLATION_API_KEY", "ollama", ""),
+        # 判定のキー欄はそのまま（空なら環境変数）
+        ({"LLM_PROVIDER": "claude", "LLM_API_KEY": ""}, "LLM_API_KEY", "claude", ""),
+        # 2026/10/20 版の ANTHROPIC_API_KEY は非推奨だが Claude の工程では優先して読む
+        ({"LLM_PROVIDER": "claude", "LLM_API_KEY": "old-gemini-key", "ANTHROPIC_API_KEY": "k-legacy"}, "LLM_API_KEY", "claude", "k-legacy"),
+        ({"LLM_PROVIDER": "gemini", "LLM_API_KEY": "k-gem", "ANTHROPIC_API_KEY": "k-legacy"}, "LLM_API_KEY", "gemini", "k-gem"),
+    ],
+)
+def test_resolve_api_key_by_stage(config, key_name, provider, expected):
+    from PaperBee.daily_posting import resolve_api_key
+
+    assert resolve_api_key(config, key_name, provider) == expected

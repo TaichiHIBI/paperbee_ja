@@ -61,14 +61,17 @@ FILTER_UNEDITED: false
 # 採用理由（SLACK_SHOW_REASON）はローカルLLMでも表示される（JSON で yes/no と理由を返させる）。
 LLM_FILTERING: false
 LLM_PROVIDER: "claude"            # "claude", "ollama", "openai", "gemini" のいずれか
-LANGUAGE_MODEL: "claude-opus-5-5" # フィルタリングに使用するモデル（ollama なら例: gemma4:26b）
-LLM_API_KEY: ""                   # OpenAIまたはGemini使用時のAPIキー（Claude は下の ANTHROPIC_API_KEY）
+# Claude なら claude-sonnet-5-5 を推奨。180件での比較では、effort low で Opus 5.5 と同等の判定を約半分の費用で出した
+LANGUAGE_MODEL: "claude-sonnet-5-5" # フィルタリングに使用するモデル（ollama なら例: gemma4:26b）
+# API キー: 各工程のキー欄（LLM_API_KEY / SUMMARIZATION_API_KEY / TRANSLATION_API_KEY）には、その工程の
+# プロバイダーのキーを書く（プロバイダーを替えたらキーも替える）。ollama はキー不要。
+# 要約・翻訳のキー欄が空で、プロバイダーが LLM_PROVIDER と同じなら LLM_API_KEY を使う。
+# どれも空なら各 SDK の環境変数（ANTHROPIC_API_KEY / OPENAI_API_KEY など）を使う（cron では環境変数が読まれないことが多い）。
+LLM_API_KEY: ""                   # LLM_PROVIDER（claude / openai / gemini）の API キー
 
 # -----------------------------------------------------------------------------
 # Claude API 設定 (LLM_PROVIDER / SUMMARIZATION_PROVIDER / TRANSLATION_PROVIDER が "claude" のとき)
 # -----------------------------------------------------------------------------
-# 空なら環境変数 ANTHROPIC_API_KEY を使います（cron では環境変数が読まれないことが多いので注意）。
-ANTHROPIC_API_KEY: ""
 # 思考の深さ。"low" で十分なことが多い（"medium", "high" で精度と費用が上がる）
 CLAUDE_EFFORT: "low"
 # フィルタリングで1リクエストにまとめる論文数
@@ -104,12 +107,12 @@ FILTERING_PROMPT: |
 # 要約設定 (オプション。Step 1: 英語アブストラクトの要約)
 # -----------------------------------------------------------------------------
 # 【推奨】Claude で日本語の要約を1回で作る場合:
-#   SUMMARIZATION_PROVIDER: "claude", SUMMARIZATION_MODEL: "claude-opus-5-5",
+#   SUMMARIZATION_PROVIDER: "claude", SUMMARIZATION_MODEL: "claude-sonnet-5-5",
 #   下のプロンプトのまま TRANSLATION_ENABLED: false にする（ローカルの要約・翻訳モデルの読み込みが不要になる）
 SUMMARIZATION_ENABLED: false
 SUMMARIZATION_PROVIDER: "ollama" # "claude", "ollama", "openai", "gemini" のいずれか
-SUMMARIZATION_MODEL: ""          # (例: claude-opus-5-5, gpt-oss:20b, gpt-4o-mini, gemini-2.5-flash)
-SUMMARIZATION_API_KEY: ""        # OpenAIまたはGemini使用時のAPIキー
+SUMMARIZATION_MODEL: ""          # (例: claude-sonnet-5-5, gpt-oss:20b, gpt-4o-mini, gemini-2.5-flash)
+SUMMARIZATION_API_KEY: ""        # SUMMARIZATION_PROVIDER の API キー（空でプロバイダーが LLM_PROVIDER と同じなら LLM_API_KEY）
 
 # 要約用プロンプト
 SUMMARIZATION_PROMPT: |
@@ -124,7 +127,7 @@ SUMMARIZATION_PROMPT: |
 TRANSLATION_ENABLED: false
 TRANSLATION_PROVIDER: "ollama" # "claude", "ollama", "openai", "gemini" のいずれか
 TRANSLATION_MODEL: ""          # 使用するモデル名 (例: mitmul/plamo-2-translate, gpt-4o-mini, gemini-2.5-flash)
-TRANSLATION_API_KEY: ""        # OpenAIまたはGemini使用時のAPIキー
+TRANSLATION_API_KEY: ""        # TRANSLATION_PROVIDER の API キー（空でプロバイダーが LLM_PROVIDER と同じなら LLM_API_KEY）
 
 # 翻訳用プロンプト (翻訳特化モデルの場合は空欄。汎用モデルの場合は以下を参考にしてください)
 TRANSLATION_PROMPT: |

@@ -5,7 +5,7 @@
 
 PaperBeeは、新しい科学論文を自動的に検索し、お気に入りのチャットツールに投稿するためのPythonアプリケーションです。
 
-> **最終更新: 2026/10/20** — Claude API に対応しました（フィルタリングの最終判定・日本語要約）。ローカルLLMを一次ふるい・代行役として組み合わせられ、月間予算ガードと判定キャッシュで支出を抑えます。あわせて、これまで実質0件だった **bioRxiv・arXiv のキーワード検索と bioRxiv の著者検索を修正**しました。（[更新履歴](#-更新履歴)）
+> **最終更新: 2026/10/21** — Claude API に対応し（フィルタリングの判定・日本語要約。推奨は Sonnet 5.5）、ローカルLLMは一次ふるい・代行役として組み合わせられます。bioRxiv・arXiv の検索と bioRxiv 新着の取りこぼしを修正し、採用が多い日の Slack 分割投稿にも対応しました。（[更新履歴](#-更新履歴)）
 
 ### 現在サポートされているプラットフォーム:
 
@@ -80,8 +80,8 @@ pip install .
 * LLMフィルタリング：Claude or OpenAI or Ollama or Gemini
 * アブストラクト翻訳：Claude or OpenAI or Ollama or Gemini
 #### Claude API（推奨構成）
-1. [Claude Console](https://platform.claude.com/) で API Key を作成し、config.yml の `ANTHROPIC_API_KEY` に貼り付けてください（全工程で共通。環境変数 `ANTHROPIC_API_KEY` でも可）。
-2. 件数は少ないが精度が効く工程を Claude に、件数の多い工程をローカルLLMに任せる構成を推奨します。
+1. [Claude Console](https://platform.claude.com/) で API Key を作成し、config.yml の `LLM_API_KEY` に貼り付けてください。要約・翻訳も Claude にする場合、それらのキー欄は空欄のままで `LLM_API_KEY` が使われます（環境変数 `ANTHROPIC_API_KEY` でも可）。
+2. 件数は少ないが精度が効く工程を Claude に、件数の多い工程をローカルLLMに任せる構成を推奨します。モデルは `claude-sonnet-5-5`（`CLAUDE_EFFORT: "low"`）を推奨します。180件で比べたところ、Opus 5.5 と同等の判定を約半分の費用で出し、Opus は effort を上げても判定がほとんど変わりませんでした。
    * `LLM_PROVIDER: "claude"` — フィルタリングの最終判定（20件ずつまとめて判定し、理由も記録）
    * `SUMMARIZATION_PROVIDER: "claude"` + `TRANSLATION_ENABLED: false` — 日本語の箇条書き要約を1回で生成（ローカルの要約・翻訳モデルの読み込みが不要になる）
    * `LOCAL_LLM_PROVIDER: "ollama"` — Claude が使えないとき（予算超過・障害）の代行判定。`LOCAL_PREFILTER: true` で Claude の前の一次ふるいにも使う
@@ -89,7 +89,7 @@ pip install .
 4. フィルタリングの判定は履歴ファイルの隣の `{履歴ファイル名}_decisions.csv` に理由つきで残ります。プロンプト調整に使ってください。同じ基準で不採用になった論文は、翌日以降に再判定しません。
 
 #### API を使わない構成（ローカルLLMのみ）
-Claude API はなくても動きます。`LLM_PROVIDER` / `SUMMARIZATION_PROVIDER` / `TRANSLATION_PROVIDER` を `"ollama"` にし、`ANTHROPIC_API_KEY` や `LOCAL_LLM_*` は設定不要です。
+Claude API はなくても動きます。`LLM_PROVIDER` / `SUMMARIZATION_PROVIDER` / `TRANSLATION_PROVIDER` を `"ollama"` にし、API キーや `LOCAL_LLM_*` は設定不要です。
 
 | 機能 | Claude | ローカルLLM（Ollama） |
 |---|---|---|
@@ -167,11 +167,10 @@ query_pubmed_arxiv: "([single-cell transcriptomics]) AND ([AI] OR [machine learn
 # -----------------------------------------------------------------------------
 LLM_FILTERING: false
 LLM_PROVIDER: "claude"            # "claude", "ollama", "openai", "gemini"
-LANGUAGE_MODEL: "claude-opus-5-5" # フィルタリングに使用するモデル
-LLM_API_KEY: ""                   # OpenAI/Gemini 使用時のみ（Claude は ANTHROPIC_API_KEY）
+LANGUAGE_MODEL: "claude-sonnet-5-5" # フィルタリングに使用するモデル（推奨。effort は CLAUDE_EFFORT: "low"）
+LLM_API_KEY: ""                   # LLM_PROVIDER の API キー（ollama は不要。空なら環境変数 ANTHROPIC_API_KEY 等）
 
 # Claude API（LLM_PROVIDER / SUMMARIZATION_PROVIDER / TRANSLATION_PROVIDER が "claude" のとき）
-ANTHROPIC_API_KEY: ""             # 空なら環境変数 ANTHROPIC_API_KEY を使用
 CLAUDE_EFFORT: "low"              # 思考の深さ: low / medium / high
 CLAUDE_BATCH_SIZE: 20             # 1リクエストで判定する論文数
 CLAUDE_MONTHLY_BUDGET_USD: 100    # 全トピック合算の月間上限（超えたらローカルLLMで処理）
@@ -191,7 +190,7 @@ FILTERING_PROMPT: |
 SUMMARIZATION_ENABLED: false
 SUMMARIZATION_PROVIDER: "ollama" # "claude", "ollama", "openai", "gemini"
 SUMMARIZATION_MODEL: "gemma2"    # 要約に使用するモデル
-SUMMARIZATION_API_KEY: ""        # API使用時のみ
+SUMMARIZATION_API_KEY: ""        # 空でプロバイダーが LLM_PROVIDER と同じなら LLM_API_KEY を使う
 
 SUMMARIZATION_PROMPT: |
   以下の日本語の論文アブストラクトを、専門家向けに重要なポイントを3点の箇条書きで要約してください。
@@ -201,7 +200,7 @@ SUMMARIZATION_PROMPT: |
 TRANSLATION_ENABLED: false
 TRANSLATION_PROVIDER: "ollama"                 # "claude", "ollama", "openai", "gemini"
 TRANSLATION_MODEL: "mitmul/plamo-2-translate"  # 翻訳に使用するモデル
-TRANSLATION_API_KEY: ""                        # API使用時のみ
+TRANSLATION_API_KEY: ""                        # 空でプロバイダーが LLM_PROVIDER と同じなら LLM_API_KEY を使う
 
 # 入力されたテキスト（英語要約 or 英語原文）を日本語翻訳
 TRANSLATION_PROMPT: |
@@ -275,6 +274,17 @@ paperbee post --config /path/to/config.yml --since 1 --databases pubmed biorxiv
 ## 📋 更新履歴
 
 <details>
+<summary><b>2026/10/21</b> — 大量投稿時の取りこぼし対策</summary>
+
+- **Slack の分割投稿**: 採用が多い日（35件超）は複数のメッセージに分けて投稿する（見出しに「(1/3)」）。Slack は1メッセージ50ブロックまでで、超えると投稿全体が拒否されていた。
+- **履歴は投稿後に記録**: Slack に投稿できた論文だけを履歴に書く。以前は投稿前に書いていたため、投稿に失敗した論文が「投稿済み」になり二度と流れなかった。
+- **arXiv のアクセス制限への対応**: 通常の間隔を5秒に広げ、429・503 では `Retry-After`（無ければ30・60・120秒）待って再試行する。
+- **推奨モデルを Sonnet 5.5（effort low）に変更**: 180件の比較で、Opus 5.5 の最上位設定（max・xhigh）の判定に対し、Sonnet 5.5 low は Opus 5.5 low と同等（見逃し0〜1件・混入2件）で費用は約半分。ローカルの gemma4:26b は見逃し0件だが混入が15件、1件あたり約28秒だった。
+- **API キーを工程別の欄に一本化**: Claude のキーも他のプロバイダーと同じく `LLM_API_KEY` などに書く。要約・翻訳のキー欄が空で、プロバイダーが判定と同じなら `LLM_API_KEY` を使う。2026/10/20 版の `ANTHROPIC_API_KEY` 欄は非推奨（当面は読み込み、警告を出す）。
+
+</details>
+
+<details>
 <summary><b>2026/10/20</b> — Claude API 対応・キーワード検索と bioRxiv 著者検索の修正</summary>
 
 - **Claude API 対応**: `LLM_PROVIDER` / `SUMMARIZATION_PROVIDER` / `TRANSLATION_PROVIDER` に `"claude"` を指定可能。フィルタリングは20件ずつ1リクエストにまとめ、構造化出力で判定と理由を受け取る。安全分類器による誤拒否はサーバー側フォールバックで別モデルが引き継ぐ。
@@ -288,7 +298,7 @@ paperbee post --config /path/to/config.yml --since 1 --databases pubmed biorxiv
 - `NCBI_API_KEY` が PubMed 著者検索に渡っていなかった問題を修正。
 - **`FILTER_UNEDITED` が bioRxiv の新着をすべて除外していた問題を修正**: bioRxiv の DOI が `10.64898/` に移行したため、プレプリント除外の対象外判定（`10.1101/` のみ）をすり抜け、CrossRef の参照数0で落とされていた（2026/07/22 以降）。取得元DBと新しい接頭辞で判定するよう変更。
 - 著者名の照合が PubMed 形式（`Theis FJ`）にも対応。
-- **同姓同名ノイズの削減（`AUTHOR_COMMON_NAMES`）**: `"auto"` で、PubMed の過去1年の論文数が多い名前（`Wang B` など）を自動判定し、その名前にしか一致しない論文は著者リストの末尾2人（責任著者側）にいる場合だけ候補にする。biglab の過去30日では候補が1,297件→459件に減り、過去に採用した29件はすべて残った。名前のリストで直接指定、`"off"` で無効化も可能。
+- **同姓同名ノイズの削減（`AUTHOR_COMMON_NAMES`）**: `"auto"` で、PubMed の過去1年の論文数が多い名前（`Wang B` など）を自動判定し、その名前にしか一致しない論文は著者リストの末尾2人（責任著者側）にいる場合だけ候補にする。100人超の著者を追う設定の過去30日分では、候補が1,297件→459件に減り、過去に採用された29件はすべて残った。名前のリストで直接指定、`"off"` で無効化も可能。
 - **キーワード検索の修正（findpapers を廃止）**: bioRxiv と arXiv のキーワード検索が常に0件だった。bioRxiv は findpapers が使う検索画面（medrxiv.org/search）が Cloudflare のボット判定で 403 を返し、arXiv は API の応答形式の変更で findpapers が件数を読めず、例外が握りつぶされていた。3つのDBとも API を直接検索する方式に置き換えた。
   - **bioRxiv**: 期間内の新着（version 1）を bioRxiv API で全件取得し、`query_biorxiv` をタイトル・アブストラクトにローカルで照合（語の境界で一致、ハイフンは空白扱い、最後の語の複数形も一致）。`([a] OR [b]) AND ([c] OR [d])` の形も使える。取得結果は `LOCAL_ROOT_DIR/biorxiv_cache.json` に6時間保存し、続けて走る他トピックと共有する。
   - **arXiv**: arXiv API をタイトル・アブストラクト（`ti:` / `abs:`）で検索。投稿から公開まで数日空くため、期間の始まりを4日前に広げる（既読分は履歴と判定キャッシュで除外）。

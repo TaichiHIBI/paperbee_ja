@@ -78,7 +78,7 @@ def validate_llm_args(config: dict, root_dir: str) -> Tuple[str, str, str, str]:
         validate_config_variable(config, "LLM_API_KEY")
         llm_api_key = str(config.get("LLM_API_KEY", ""))
 
-    # claude の API キーは ANTHROPIC_API_KEY（設定ファイル or 環境変数）で渡すため、ここでは必須にしない
+    # claude は LLM_API_KEY が空でも環境変数 ANTHROPIC_API_KEY で動くので、ここでは必須にしない
     if LLM_PROVIDER not in ["openai", "ollama", "gemini", "claude", "anthropic"]:
         e = f"{LLM_PROVIDER} is an invalid LLM provider {LLM_PROVIDER}. Please select one of ('claude', 'openai', 'ollama', 'gemini')."
         raise ValueError(e)

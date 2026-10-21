@@ -78,6 +78,7 @@ class SlackPaperPublisher:
         preprints: List[str],
         today: str,
         spreadsheet_id: str,
+        part: Optional[Tuple[int, int]] = None,
     ) -> Optional[SlackResponse]:
         """
         Publishes the formatted papers and preprints to the specified Slack channel.
@@ -87,52 +88,23 @@ class SlackPaperPublisher:
             preprints (List[str]): A list of formatted preprints.
             today (str): The date for the publication (used in the footer message).
             spreadsheet_id (str): The ID of the Google Spreadsheet containing the papers.
+            part (Optional[Tuple[int, int]]): 複数のメッセージに分けて投稿するときの (何通目, 全通数)。
+                見出しに「(1/3)」を付け、論文の無い欄（"No papers found today." など）は省く。
 
         Returns:
             Optional[dict]: The Slack API response on success, or None if there is an error.
         """
         try:
-            header = "Good morning :coffee: Here are today's papers! Enjoy your reading! :wave:\n"
+            header = "Good morning :coffee: Here are today's papers! Enjoy your reading! :wave:"
+            header += f" ({part[0]}/{part[1]})\n" if part else "\n"
             footer = (
                 f"*View all papers:* <https://docs.google.com/spreadsheets/d/{spreadsheet_id}|Google Sheet> :books:"
             )
             message_blocks: List[Dict[str, Any]] = [
                 {"type": "section", "text": {"type": "mrkdwn", "text": header}},
-                {"type": "divider"},
-                {
-                    "type": "section",
-                    "text": {"type": "mrkdwn", "text": "*Preprints:*:point_down:"},
-                },
             ]
-            if preprints:
-                for paper in preprints:
-                    paper_section = {
-                        "type": "section",
-                        "text": {"type": "mrkdwn", "text": paper},
-                    }
-                    message_blocks.append(paper_section)
-            else:
-                message_blocks.append({
-                    "type": "section",
-                    "text": {"type": "mrkdwn", "text": "No preprints found today."},
-                })
-            message_blocks.append({"type": "divider"})
-            message_blocks.append({
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": "*Papers:*:point_down:"},
-            })
-            if papers:
-                for paper in papers:
-                    paper_section = {
-                        "type": "section",
-                        "text": {"type": "mrkdwn", "text": paper},
-                    }
-                    message_blocks.append(paper_section)
-            else:
-                message_blocks.append({
-                    "type": "section",
-                    "text": {"type": "mrkdwn", "text": "No papers found today."},
-                })
+            message_blocks += self._list_blocks("*Preprints:*:point_down:", preprints, "No preprints found today.", part)
+            message_blocks += self._list_blocks("*Papers:*:point_down:", papers, "No papers found today.", part)
             message_blocks.append({"type": "divider"})
             message_blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": footer}})
             message_blocks.append({
@@ -162,6 +134,20 @@ class SlackPaperPublisher:
             return None
         else:
             return response
+
+    @staticmethod
+    def _list_blocks(
+        title: str, items: List[str], empty_text: str, part: Optional[Tuple[int, int]]
+    ) -> List[Dict[str, Any]]:
+        """論文の欄（区切り・見出し・各論文）のブロック。分割投稿（part あり）では空の欄を出さない。"""
+        if not items and part:
+            return []
+        texts = items or [empty_text]
+        return [
+            {"type": "divider"},
+            {"type": "section", "text": {"type": "mrkdwn", "text": title}},
+            *({"type": "section", "text": {"type": "mrkdwn", "text": text}} for text in texts),
+        ]
 
     def _send_csv(self, papers: pd.DataFrame, root_dir: str, user_id: str, user_query: str) -> Optional[SlackResponse]:
         """

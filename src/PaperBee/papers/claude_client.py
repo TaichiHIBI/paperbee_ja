@@ -214,6 +214,8 @@ class ClaudeClient:
         self.model = model or DEFAULT_MODEL
         self.effort = effort
         self.ledger = ledger
+        # 直近のリクエストに実際に応答したモデル（安全分類器の拒否でサーバー側フォールバックが走ると self.model と異なる）
+        self.last_model: str = ""
         # api_key が空なら SDK の既定の解決順（ANTHROPIC_API_KEY 環境変数 → `ant auth login` のプロファイル）に任せる
         self._client = client or anthropic.Anthropic(api_key=api_key or None, timeout=300.0, max_retries=3)
 
@@ -238,7 +240,14 @@ class ClaudeClient:
                 raw = api.parse(output_format=output_format, **params)
             else:
                 raw = api.create(**params)
-        except (anthropic.AuthenticationError, anthropic.PermissionDeniedError, anthropic.NotFoundError) as e:
+        except anthropic.AuthenticationError as e:
+            msg = (
+                "Claude API の認証に失敗しました。その工程のキー欄（LLM_API_KEY / SUMMARIZATION_API_KEY / "
+                "TRANSLATION_API_KEY）か環境変数 ANTHROPIC_API_KEY に、Anthropic の API キーが入っているか確認してください"
+                f"（プロバイダーを替えたときに、以前のプロバイダーのキーが残っていることがあります）: {e}"
+            )
+            raise ClaudeCallError(msg, permanent=True) from e
+        except (anthropic.PermissionDeniedError, anthropic.NotFoundError) as e:
             msg = f"Claude API の設定エラー ({type(e).__name__}): {e}"
             raise ClaudeCallError(msg, permanent=True) from e
         except anthropic.BadRequestError as e:
@@ -267,6 +276,7 @@ class ClaudeClient:
         """
         raw = self._call_api(params, output_format)
         body = raw.http_response.json()
+        self.last_model = str(body.get("model") or self.model)
         if self.ledger is not None:
             # フォールバックが走った場合 model は実際に応答したモデル。費用はそのモデルの単価で概算する
             self.ledger.record(purpose, str(body.get("model") or self.model), body.get("usage") or {})
@@ -297,15 +307,18 @@ class ClaudeClient:
             self.ledger.check()
         return self._send(purpose, self._build_params(messages, system, max_tokens), output_format)
 
-    def judge_papers(self, criteria: str, papers: Sequence[Tuple[int, str]]) -> Dict[int, PaperDecision]:
+    def judge_papers(
+        self, criteria: str, papers: Sequence[Tuple[int, str]], max_tokens: int = 16000
+    ) -> Dict[int, PaperDecision]:
         """論文をまとめて1リクエストで判定する。papers は (id, 整形済みテキスト) の列。
 
         返り値は id → 判定。モデルが判定を返さなかった id は含まれない（呼び出し側で扱う）。
+        max_tokens は思考と出力の合計の上限（effort を上げるときは広げる）。
         """
         system = FILTER_SYSTEM_PROMPT.format(criteria=criteria.strip())
         body = "\n\n".join(f'<paper id="{pid}">\n{text}\n</paper>' for pid, text in papers)
         messages = [{"role": "user", "content": f"Judge these {len(papers)} papers.\n\n{body}"}]
-        response = self._request("filter", messages, system=system, output_format=PaperDecisions)
+        response = self._request("filter", messages, system=system, output_format=PaperDecisions, max_tokens=max_tokens)
         parsed = response.parsed_output
         if parsed is None:
             e = "Claude の判定結果が空でした"

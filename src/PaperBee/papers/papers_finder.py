@@ -56,6 +56,11 @@ ARXIV_NS = {
 # 公開）。初版の投稿日（published）で期間を切ると週末をまたいだ論文が公開時点で既に期間外になるため、
 # 期間の始まりをこの日数だけ前に広げる。前回までに見た論文は history と判定キャッシュで除外される。
 ARXIV_LOOKBACK_DAYS = 4
+# arXiv API は連続アクセスに間隔を求め、超えると 429（混雑時は 503）を返す（3秒間隔・3〜12秒の再試行では
+# 回復しないことがある）。通常の間隔を広めに取り、429・503 では Retry-After
+# （無ければ下の秒数）だけ待って再試行する
+ARXIV_REQUEST_INTERVAL = 5
+ARXIV_RETRY_WAITS = (30, 60, 120)
 
 PUBMED_EUTILS_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
 # PubMed の期間は収載日（Entrez Date）で切る。出版日（Date - Publication）で切ると、出版日より遅れて
@@ -69,6 +74,9 @@ PUBMED_DATE_FIELD = "Date - Entrez"
 DEFAULT_COMMON_NAME_THRESHOLD = 300
 AUTHOR_COUNT_CACHE_FILE = "author_pubmed_counts.json"
 AUTHOR_COUNT_TTL = timedelta(days=30)
+
+# Slack は1メッセージ50ブロックまで。固定のブロック（見出し・区切り・フッター）を除いた残りに収まる論文数で分割する
+SLACK_PAPERS_PER_MESSAGE = 35
 
 # LLM判定ログ（{履歴ファイル名}_decisions.csv）の列と保持期間
 DECISION_COLUMNS = ["DOI", "Date", "PromptKey", "Stage", "Relevant", "Reason", "Title"]
@@ -136,6 +144,18 @@ def filter_by_senior_position(
         if not matched or any(key not in common or i >= len(keys) - positions for i, key in matched):
             kept.append(article)
     return kept
+
+
+def _arxiv_retry_wait(error: Exception, attempt: int) -> float:
+    """arXiv の再試行までの待ち時間（秒）。429・503 は Retry-After を優先し、無ければ ARXIV_RETRY_WAITS。"""
+    response = getattr(error, "response", None)
+    status = getattr(response, "status_code", None)
+    if status in (429, 503):
+        retry_after = str(response.headers.get("Retry-After", "")).strip() if response is not None else ""
+        if retry_after.isdigit():
+            return float(min(max(int(retry_after), ARXIV_REQUEST_INTERVAL), 300))
+        return float(ARXIV_RETRY_WAITS[min(attempt, len(ARXIV_RETRY_WAITS) - 1)])
+    return float(3 * 2**attempt)  # 通信エラーなどは短めに
 
 
 def _biorxiv_display_name(name: str) -> str:
@@ -749,17 +769,19 @@ class PapersFinder:
         return result
 
     def _fetch_arxiv_page(self, params: Dict[str, Any]) -> Optional[Any]:
-        """arXiv API の1ページを取得して XML のルートを返す（3回まで再試行）。取得できなければ None。"""
-        for attempt in range(3):
+        """arXiv API の1ページを取得して XML のルートを返す（混雑・制限時は待って再試行）。取得できなければ None。"""
+        attempts = len(ARXIV_RETRY_WAITS) + 1
+        for attempt in range(attempts):
             try:
                 resp = requests.get(ARXIV_API_URL, params=params, timeout=60)
                 resp.raise_for_status()
                 root = ET.fromstring(resp.content)
             except Exception as e:
-                self.logger.warning(f"arXiv API 取得失敗 (試行 {attempt + 1}/3): {e}")
-                sleep(3 * 2**attempt)
+                self.logger.warning(f"arXiv API 取得失敗 (試行 {attempt + 1}/{attempts}): {e}")
+                if attempt < attempts - 1:
+                    sleep(_arxiv_retry_wait(e, attempt))
                 continue
-            sleep(3)  # arXiv は連続アクセスに3秒の間隔を求めている
+            sleep(ARXIV_REQUEST_INTERVAL)
             # クエリの書式誤りはエラー内容を1件の entry として返す（再試行しても同じ）
             for entry in root.findall("atom:entry", ARXIV_NS):
                 if "/api/errors" in (entry.findtext("atom:id", default="", namespaces=ARXIV_NS) or ""):
@@ -1190,17 +1212,36 @@ class PapersFinder:
         return [list(row) for row in processed_articles.values.tolist()]
 
     def post_paper_to_slack(self, papers: List[List[str]]) -> Any:
+        response, _ = self._post_to_slack_in_chunks(papers)
+        return response
+
+    def _post_to_slack_in_chunks(self, papers: List[List[Any]]) -> Tuple[Any, List[List[Any]]]:
+        """SLACK_PAPERS_PER_MESSAGE 件ずつのメッセージに分けて Slack に投稿する。
+
+        途中のメッセージで失敗したらそこで止める。返り値は (最後に成功した応答, 投稿できた論文の行)。
+        """
         self.slack_publisher: SlackPaperPublisher = SlackPaperPublisher(
             WebClient(self.slack_bot_token),
             Logger("SlackPaperPublisher"),
             channel_id=self.slack_channel_id,
         )
         reasons = self.llm_reasons if self.slack_show_reason else None
-        papers_pub, preprints = self.slack_publisher.format_papers_for_slack(papers, reasons=reasons)
-        response = self.slack_publisher.publish_papers_to_slack(
-            papers_pub, preprints, self.today_str, self.spreadsheet_id
-        )
-        return response
+        chunks = [papers[i : i + SLACK_PAPERS_PER_MESSAGE] for i in range(0, len(papers), SLACK_PAPERS_PER_MESSAGE)]
+        chunks = chunks or [[]]  # 0件の日も「No papers found today.」を投稿する
+        response: Any = None
+        posted: List[List[Any]] = []
+        for number, chunk in enumerate(chunks, start=1):
+            papers_pub, preprints = self.slack_publisher.format_papers_for_slack(chunk, reasons=reasons)
+            part = (number, len(chunks)) if len(chunks) > 1 else None
+            result = self.slack_publisher.publish_papers_to_slack(
+                papers_pub, preprints, self.today_str, self.spreadsheet_id, part=part
+            )
+            if result is None:
+                self.logger.error(f"Slack への投稿に失敗しました（{number}/{len(chunks)}通目）。残りは送りません")
+                break
+            response = result
+            posted.extend(chunk)
+        return response, posted
 
     async def post_paper_to_telegram(self, papers: List[List[str]]) -> Any:
         telegram_publisher = TelegramPaperPublisher(
@@ -1266,7 +1307,9 @@ class PapersFinder:
         post_to_mattermost: bool = False,
     ) -> Tuple[List[List[Any]], Any | None, Any | None, Any | None, Any | None]:
         processed_articles = self.find_and_process_papers()
-        papers = self.update_local_history(processed_articles)
+        papers = self.select_new_papers(processed_articles)
+        # 履歴には投稿できた論文だけを記録する。失敗した分は次回の実行で再び候補になる
+        posted = papers
 
         response_slack = None
         response_telegram = None
@@ -1275,7 +1318,9 @@ class PapersFinder:
 
         if post_to_slack:
             print("Posting to Slack...")
-            response_slack = self.post_paper_to_slack(papers)
+            response_slack, posted = self._post_to_slack_in_chunks(papers)
+            if len(posted) < len(papers):
+                print(f"  Slack に投稿できなかった {len(papers) - len(posted)}件は履歴に記録しません（次回の実行で再投稿します）")
 
         if post_to_telegram:
             print("Posting to Telegram...")
@@ -1289,6 +1334,7 @@ class PapersFinder:
             print("Posting to Mattermost...")
             response_mattermost = await self.post_paper_to_mattermost(papers)
 
+        self.record_history(posted)
         self.cleanup_files()
 
         return papers, response_slack, response_telegram, response_zulip, response_mattermost
@@ -1304,15 +1350,21 @@ class PapersFinder:
         return processed_articles, response
     
     def update_local_history(self, processed_articles: pd.DataFrame) -> List[List[Any]]:
-        history_file_path = self._history_path()
+        """履歴に無い論文を選んで、そのまま履歴に記録する（投稿の成否を待たない従来の動作）。"""
+        papers = self.select_new_papers(processed_articles)
+        self.record_history(papers)
+        return papers
 
-        # 既存履歴を堅牢に読み込む（列ドリフトを正規化して取りこぼさない）
-        history_df = self._load_history_df(history_file_path)
+    def _load_published_dois(self) -> Tuple[Optional[pd.DataFrame], set]:
+        history_df = self._load_history_df(self._history_path())
         published_dois: set = set()
         if history_df is not None and "DOI" in history_df.columns:
             published_dois = set(history_df["DOI"].dropna().astype(str).str.strip().str.lower())
+        return history_df, published_dois
 
-        # 新規論文のみ抽出（DOIを正規化して照合）
+    def select_new_papers(self, processed_articles: pd.DataFrame) -> List[List[Any]]:
+        """履歴に無い論文を HISTORY_COLUMNS の列順の行にして返す（履歴にはまだ書かない）。"""
+        _, published_dois = self._load_published_dois()
         if not processed_articles.empty and "DOI" in processed_articles.columns:
             norm_doi = processed_articles["DOI"].astype(str).str.strip().str.lower()
             new_articles = processed_articles[~norm_doi.isin(published_dois)]
@@ -1322,20 +1374,23 @@ class PapersFinder:
         if new_articles.empty:
             self.logger.info("新しい論文は見つかりませんでした（すべて履歴済み）。")
             return []
+        return list(new_articles.reindex(columns=HISTORY_COLUMNS, fill_value="").values.tolist())
 
-        # 既存＋新規を正準スキーマで結合し、ファイル全体を書き直す（追記による列ドリフトを根絶）
-        new_for_history = new_articles.reindex(columns=HISTORY_COLUMNS, fill_value="")
+    def record_history(self, papers: List[List[Any]]) -> None:
+        """投稿した論文（HISTORY_COLUMNS の列順の行）を履歴に追記する。
+
+        既存＋新規を正準スキーマで結合してファイル全体を書き直す（追記による列ドリフトを根絶）。
+        """
+        if not papers:
+            return
+        history_df, _ = self._load_published_dois()
+        new_for_history = pd.DataFrame(papers, columns=HISTORY_COLUMNS)
         if history_df is not None and not history_df.empty:
             combined = pd.concat([history_df, new_for_history], ignore_index=True)
         else:
             combined = new_for_history
-        combined = combined.drop_duplicates(
-            subset="DOI", keep="first"
-        ) if "DOI" in combined.columns else combined
+        combined = combined.drop_duplicates(subset="DOI", keep="first")
 
+        history_file_path = self._history_path()
         if self._write_history_df(combined, history_file_path):
-            self.logger.info(f"{len(new_articles)} 件の新しい論文を {history_file_path} に保存しました。")
-
-        new_articles = new_for_history
-
-        return new_articles.values.tolist()
+            self.logger.info(f"{len(papers)} 件の新しい論文を {history_file_path} に保存しました。")
