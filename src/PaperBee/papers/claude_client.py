@@ -23,8 +23,10 @@ import anthropic
 from pydantic import BaseModel
 
 CLAUDE_PROVIDERS = ("claude", "anthropic")
-DEFAULT_MODEL = "claude-opus-5-5"
-DEFAULT_EFFORT = "low"
+# 設定ファイルで省略されたときの既定値。論文の判定の比較（180件）で、Sonnet 5.5 high が
+# Opus 5.5 と同等の判定を約半分の費用で出した（設定テンプレートの推奨と同じ）
+DEFAULT_MODEL = "claude-sonnet-5-5"
+DEFAULT_EFFORT = "high"
 
 # 安全分類器が拒否したリクエストをサーバー側で別モデルに回す機能（fallbacks="default"）の対応モデル。
 # 生物系のアブストラクトは bio 分類器に誤って拒否されることがあるため、対応モデルでは常に有効にする。

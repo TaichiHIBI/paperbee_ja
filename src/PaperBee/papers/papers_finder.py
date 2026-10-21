@@ -557,6 +557,8 @@ class PapersFinder:
             summarization_model=self.summarization_model,
             summarization_api_key=self.summarization_api_key,
             summarization_prompt=self.summarization_prompt,
+            local_provider=self.local_provider,
+            local_model=self.local_model,
         )
         processed_articles = processor.articles
         self.logger.info(f"Found {len(processed_articles)} articles.")

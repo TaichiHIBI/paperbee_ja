@@ -25,7 +25,7 @@ PaperBeeは、新しい科学論文を自動的に検索し、お気に入りの
 - **ジャーナル名表示** — Slack投稿に掲載誌名を表示
 - **著者名検索** — `query_authors` で PubMed / arXiv / bioRxiv の著者を直接検索（多数の著者も自動分割で対応）
 - **LLMフィルタリング** — Claude / OpenAI / Ollama / Gemini に対応。アブストラクトまで読んで判定し、判定理由を記録
-- **Claude + ローカルLLM の分担** — Claude が最終判定、ローカルLLMが一次ふるいと障害時の代行。月間予算ガード付き
+- **Claude + ローカルLLM の分担** — Claude が最終判定、ローカルLLMが一次ふるいと障害時の代行（判定・要約・翻訳）。月間予算ガード付き
 - **検索の堅牢化** — PubMed・arXiv・bioRxiv の API を直接検索（収載の遅れ・公開の遅れで取りこぼさない期間指定）、`FILTER_UNEDITED` オプション
 
 > ⚠️ 日本語の要約・翻訳とジャーナル名表示は **Slack のみ** 対応です。Telegram / Zulip / Mattermost では英語タイトルとリンクのみ表示されます。
@@ -81,10 +81,10 @@ pip install .
 * アブストラクト翻訳：Claude or OpenAI or Ollama or Gemini
 #### Claude API（推奨構成）
 1. [Claude Console](https://platform.claude.com/) で API Key を作成し、config.yml の `LLM_API_KEY` に貼り付けてください。要約・翻訳も Claude にする場合、それらのキー欄は空欄のままで `LLM_API_KEY` が使われます（環境変数 `ANTHROPIC_API_KEY` でも可）。
-2. 件数は少ないが精度が効く工程を Claude に、件数の多い工程をローカルLLMに任せる構成を推奨します。モデルは `claude-sonnet-5-5`（`CLAUDE_EFFORT: "low"`）を推奨します。180件で比べたところ、Opus 5.5 と同等の判定を約半分の費用で出し、Opus は effort を上げても判定がほとんど変わりませんでした。
+2. 件数は少ないが精度が効く工程を Claude に、件数の多い工程をローカルLLMに任せる構成を推奨します。モデルは `claude-sonnet-5-5`（`CLAUDE_EFFORT: "high"`）を推奨します。180件で比べたところ、Opus 5.5 と同等の判定を約半分の費用で出しました。Sonnet の high は low と比べて費用が約5%増えるだけで、判定が安定しました（2回の判定が完全に一致し、見逃し0件）。
    * `LLM_PROVIDER: "claude"` — フィルタリングの最終判定（20件ずつまとめて判定し、理由も記録）
    * `SUMMARIZATION_PROVIDER: "claude"` + `TRANSLATION_ENABLED: false` — 日本語の箇条書き要約を1回で生成（ローカルの要約・翻訳モデルの読み込みが不要になる）
-   * `LOCAL_LLM_PROVIDER: "ollama"` — Claude が使えないとき（予算超過・障害）の代行判定。`LOCAL_PREFILTER: true` で Claude の前の一次ふるいにも使う
+   * `LOCAL_LLM_PROVIDER: "ollama"` — Claude が使えないとき（予算超過・障害）に、判定と要約・翻訳を同じ指示で代行。`LOCAL_PREFILTER: true` で Claude の前の一次ふるいにも使う
 3. 支出は `LOCAL_ROOT_DIR/claude_usage.csv` に記録され、全トピック合算で `CLAUDE_MONTHLY_BUDGET_USD`（既定 $100）に達すると、その月は Claude を呼ばずローカルLLMで処理します。
 4. フィルタリングの判定は履歴ファイルの隣の `{履歴ファイル名}_decisions.csv` に理由つきで残ります。プロンプト調整に使ってください。同じ基準で不採用になった論文は、翌日以降に再判定しません。
 
@@ -97,7 +97,7 @@ Claude API はなくても動きます。`LLM_PROVIDER` / `SUMMARIZATION_PROVIDE
 | 採用理由の Slack 表示・判定ログ | ✓ | ✓（JSON スキーマで yes/no と理由を返させる） |
 | 判定キャッシュ・同姓同名ルール・検索 | ✓ | ✓（LLM に依存しない） |
 | 月間予算ガード | ✓ | 不要 |
-| 障害時の代行 | ローカルLLMが代行 | ― |
+| 障害時の代行（判定・要約・翻訳） | ローカルLLMが代行 | ― |
 
 gemma4 などの思考するモデルは、回答が yes/no の1語でも内部で数百トークン推論するため、1件あたり20秒前後かかります（M4 Pro / 24GB の実測）。
 #### OpenAI API
@@ -167,16 +167,16 @@ query_pubmed_arxiv: "([single-cell transcriptomics]) AND ([AI] OR [machine learn
 # -----------------------------------------------------------------------------
 LLM_FILTERING: false
 LLM_PROVIDER: "claude"            # "claude", "ollama", "openai", "gemini"
-LANGUAGE_MODEL: "claude-sonnet-5-5" # フィルタリングに使用するモデル（推奨。effort は CLAUDE_EFFORT: "low"）
+LANGUAGE_MODEL: "claude-sonnet-5-5" # フィルタリングに使用するモデル（推奨。effort は CLAUDE_EFFORT: "high"）
 LLM_API_KEY: ""                   # LLM_PROVIDER の API キー（ollama は不要。空なら環境変数 ANTHROPIC_API_KEY 等）
 
 # Claude API（LLM_PROVIDER / SUMMARIZATION_PROVIDER / TRANSLATION_PROVIDER が "claude" のとき）
-CLAUDE_EFFORT: "low"              # 思考の深さ: low / medium / high
+CLAUDE_EFFORT: "high"             # 思考の深さ: low / medium / high（推奨 high）
 CLAUDE_BATCH_SIZE: 20             # 1リクエストで判定する論文数
 CLAUDE_MONTHLY_BUDGET_USD: 100    # 全トピック合算の月間上限（超えたらローカルLLMで処理）
 
 # ローカルLLMのサブエージェント（Claude と併用）
-LOCAL_LLM_PROVIDER: "ollama"      # Claude が使えないときの代行判定
+LOCAL_LLM_PROVIDER: "ollama"      # Claude が使えないときの代行（判定・要約・翻訳）
 LOCAL_LLM_MODEL: "gemma4:26b"
 LOCAL_PREFILTER: false            # true で Claude の前に一次ふるい（明らかに無関係なものだけ落とす）
 
@@ -279,7 +279,8 @@ paperbee post --config /path/to/config.yml --since 1 --databases pubmed biorxiv
 - **Slack の分割投稿**: 採用が多い日（35件超）は複数のメッセージに分けて投稿する（見出しに「(1/3)」）。Slack は1メッセージ50ブロックまでで、超えると投稿全体が拒否されていた。
 - **履歴は投稿後に記録**: Slack に投稿できた論文だけを履歴に書く。以前は投稿前に書いていたため、投稿に失敗した論文が「投稿済み」になり二度と流れなかった。
 - **arXiv のアクセス制限への対応**: 通常の間隔を5秒に広げ、429・503 では `Retry-After`（無ければ30・60・120秒）待って再試行する。
-- **推奨モデルを Sonnet 5.5（effort low）に変更**: 180件の比較で、Opus 5.5 の最上位設定（max・xhigh）の判定に対し、Sonnet 5.5 low は Opus 5.5 low と同等（見逃し0〜1件・混入2件）で費用は約半分。ローカルの gemma4:26b は見逃し0件だが混入が15件、1件あたり約28秒だった。
+- **推奨モデルを Sonnet 5.5（effort high）に変更**: 180件の比較で、Opus 5.5 の最上位設定（max・xhigh）の判定に対し、Sonnet 5.5 は Opus 5.5 low と同等（見逃し0〜1件・混入2件）で費用は約半分。Sonnet の high は low より費用が約5%多いだけで、2回の判定が完全に一致した。ローカルの gemma4:26b は見逃し0件だが混入が15件、1件あたり約28秒だった。
+- **要約・翻訳にもローカルLLMの代行**: API での要約・翻訳に失敗したら、`LOCAL_LLM_PROVIDER` / `LOCAL_LLM_MODEL` のローカルLLMが同じ指示で作り直す（未設定なら従来どおり原文のまま）。Gemini のキーが無いときに「(Error: API Key missing)」付きの原文が投稿されていた問題も修正。
 - **API キーを工程別の欄に一本化**: Claude のキーも他のプロバイダーと同じく `LLM_API_KEY` などに書く。要約・翻訳のキー欄が空で、プロバイダーが判定と同じなら `LLM_API_KEY` を使う。2026/10/20 版の `ANTHROPIC_API_KEY` 欄は非推奨（当面は読み込み、警告を出す）。
 
 </details>

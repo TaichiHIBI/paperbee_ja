@@ -61,7 +61,7 @@ FILTER_UNEDITED: false
 # 採用理由（SLACK_SHOW_REASON）はローカルLLMでも表示される（JSON で yes/no と理由を返させる）。
 LLM_FILTERING: false
 LLM_PROVIDER: "claude"            # "claude", "ollama", "openai", "gemini" のいずれか
-# Claude なら claude-sonnet-5-5 を推奨。180件での比較では、effort low で Opus 5.5 と同等の判定を約半分の費用で出した
+# Claude なら claude-sonnet-5-5（CLAUDE_EFFORT: "high"）を推奨。180件での比較では、Opus 5.5 と同等の判定を約半分の費用で出した
 LANGUAGE_MODEL: "claude-sonnet-5-5" # フィルタリングに使用するモデル（ollama なら例: gemma4:26b）
 # API キー: 各工程のキー欄（LLM_API_KEY / SUMMARIZATION_API_KEY / TRANSLATION_API_KEY）には、その工程の
 # プロバイダーのキーを書く（プロバイダーを替えたらキーも替える）。ollama はキー不要。
@@ -72,8 +72,9 @@ LLM_API_KEY: ""                   # LLM_PROVIDER（claude / openai / gemini）�
 # -----------------------------------------------------------------------------
 # Claude API 設定 (LLM_PROVIDER / SUMMARIZATION_PROVIDER / TRANSLATION_PROVIDER が "claude" のとき)
 # -----------------------------------------------------------------------------
-# 思考の深さ。"low" で十分なことが多い（"medium", "high" で精度と費用が上がる）
-CLAUDE_EFFORT: "low"
+# 思考の深さ（low / medium / high / xhigh / max）。論文の判定では "high" を推奨。
+# 比較では low とほぼ同じ費用（約5%増）で判定が安定した（2回の判定が完全に一致し、見逃し0件）
+CLAUDE_EFFORT: "high"
 # フィルタリングで1リクエストにまとめる論文数
 CLAUDE_BATCH_SIZE: 20
 # 月間予算（USD）。LOCAL_ROOT_DIR/claude_usage.csv に記録した推定支出が全トピック合算でこれに達すると、
@@ -84,8 +85,10 @@ CLAUDE_MONTHLY_BUDGET_USD: 100
 # -----------------------------------------------------------------------------
 # ローカルLLMのサブエージェント (Claude と併用する場合)
 # -----------------------------------------------------------------------------
-# Claude が使えないとき（予算超過・障害・拒否）に、このモデルがフィルタリングの判定を代行します。
-# 未設定だと、その日に判定できなかった論文は投稿されません（--since の範囲内なら翌日に再判定）。
+# Claude などの API が使えないとき（予算超過・障害・拒否・キーの誤り）に、このモデルがフィルタリングの判定と、
+# 要約・翻訳を同じ指示で代行します。
+# 未設定だと、判定できなかった論文は投稿されず（--since の範囲内なら翌日に再判定）、
+# 要約・翻訳に失敗した論文は原文のまま投稿されます。
 LOCAL_LLM_PROVIDER: "ollama"      # 現在は "ollama" のみ
 LOCAL_LLM_MODEL: "gemma4:26b"
 # true にすると、Claude の前にこのモデルで一次ふるいをかけ、明らかに無関係な論文だけを落とします。

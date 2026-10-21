@@ -20,65 +20,72 @@ from .claude_client import is_claude_provider
 from .llm_filtering import OLLAMA_TIMEOUT_SECONDS
 
 
-def translate_abstract(text: str, provider: str, model_name: str, api_key: str = "", prompt_template: str = "") -> str:
+_KNOWN_PROVIDERS = ("ollama", "claude", "anthropic", "gemini", "openai")
+
+
+def _generate(prompt: str, provider: str, model_name: str, api_key: str) -> Optional[str]:
+    """LLM でテキストを1回生成する。失敗したら理由を表示して None を返す。"""
+    try:
+        if provider == "ollama":
+            client = ollama.Client(timeout=OLLAMA_TIMEOUT_SECONDS)
+            chat = client.chat(model=model_name, messages=[{"role": "user", "content": prompt}])
+            content = chat["message"]["content"]
+        elif is_claude_provider(provider):
+            content = get_claude_client(api_key=api_key, model=model_name).generate_text(prompt)
+        elif provider == "gemini":
+            if genai is None:
+                print("  [gemini] google-genai がインストールされていません")
+                return None
+            if not api_key:
+                print("  [gemini] API キーがありません")
+                return None
+            generated = genai.Client(api_key=api_key).models.generate_content(model=model_name, contents=prompt)
+            sleep(1)  # Rate limit handling
+            content = generated.text
+        else:  # openai
+            from openai import OpenAI
+
+            completion = OpenAI(api_key=api_key).chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant for summarizing scientific papers."},
+                    {"role": "user", "content": prompt},
+                ],
+            )
+            content = completion.choices[0].message.content
+    except Exception as e:
+        print(f"  [{provider}:{model_name}] 生成に失敗しました: {type(e).__name__}: {e}")
+        return None
+    text = str(content or "").strip()
+    return text or None
+
+
+def translate_abstract(
+    text: str,
+    provider: str,
+    model_name: str,
+    api_key: str = "",
+    prompt_template: str = "",
+    fallback_provider: str = "",
+    fallback_model: str = "",
+) -> str:
+    """要約・翻訳の1工程。失敗したら fallback_provider（ローカルLLM）が同じ指示で代行し、それも失敗したら原文を返す。"""
     if not text or not isinstance(text, str):
         return ""
-    
+    if provider not in _KNOWN_PROVIDERS:
+        return text
+
     # プロンプトの組み立て
     if "{text}" in prompt_template:
         prompt = prompt_template.format(text=text)
     else:
         prompt = f"{prompt_template}\n\nAbstract:\n{text}"
 
-    try:
-        if provider == "ollama":
-            client = ollama.Client(timeout=OLLAMA_TIMEOUT_SECONDS)
-            response = client.chat(model=model_name, messages=[
-                {'role': 'user', 'content': prompt},
-            ])
-            return response['message']['content']
-
-        elif is_claude_provider(provider):
-            return get_claude_client(api_key=api_key, model=model_name).generate_text(prompt)
-
-        elif provider == "gemini":
-            if genai is None:
-                return text + " (Error: google-genai not installed)"
-            if not api_key:
-                return text + " (Error: API Key missing)"
-            
-            # v1.0 SDK usage
-            client = genai.Client(api_key=api_key)
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt
-            )
-            from time import sleep
-            sleep(1) # Rate limit handling
-            return response.text
-            
-        elif provider == "openai":
-            from openai import OpenAI
-            
-            # クライアントの初期化
-            client = OpenAI(api_key=api_key)
-            
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant for summarizing scientific papers."},
-                    {"role": "user", "content": prompt}
-                ]
-            )
-            return response.choices[0].message.content
-        # -----------------
-
-        else:
-            return text
-
-    except Exception as e:
-        print(f"Translation failed ({provider}): {e}")
-        return text
+    result = _generate(prompt, provider, model_name, api_key)
+    if result is None and fallback_provider and fallback_model and (fallback_provider, fallback_model) != (provider, model_name):
+        print(f"  ローカルLLM（{fallback_model}）で代行します")
+        result = _generate(prompt, fallback_provider, fallback_model, "")
+    return text if result is None else result
 
 
 class ArticlesProcessor:
@@ -100,6 +107,8 @@ class ArticlesProcessor:
         summarization_model: str = "gemma2",
         summarization_api_key: str = "",
         summarization_prompt: str = "",
+        local_provider: str = "",
+        local_model: str = "",
     ) -> None:
         """
         Initializes the ArticlesProcessor with articles data and the current date.
@@ -121,6 +130,10 @@ class ArticlesProcessor:
         self.translation_model = translation_model
         self.translation_api_key = translation_api_key
         self.translation_prompt = translation_prompt
+
+        # 要約・翻訳が失敗したときの代行役（ローカルLLM）。空なら代行せず原文のまま
+        self.local_provider = local_provider
+        self.local_model = local_model
 
         self.articles = pd.DataFrame.from_dict(articles)
         self.today_str = today_str
@@ -221,7 +234,9 @@ class ArticlesProcessor:
                         self.summarization_provider, 
                         self.summarization_model, 
                         self.summarization_api_key,
-                        self.summarization_prompt
+                        self.summarization_prompt,
+                        self.local_provider,
+                        self.local_model,
                     ) if x and isinstance(x, str) else ""
                 )
 
@@ -234,7 +249,9 @@ class ArticlesProcessor:
                         self.translation_provider, 
                         self.translation_model, 
                         self.translation_api_key,
-                        self.translation_prompt
+                        self.translation_prompt,
+                        self.local_provider,
+                        self.local_model,
                     ) if x and isinstance(x, str) else ""
                 )
 
